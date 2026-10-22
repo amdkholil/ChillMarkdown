@@ -1,4 +1,4 @@
-# chillMarkdown — Rencana Aplikasi
+# Chill Markdown — Rencana Aplikasi
 
 Aplikasi desktop markdown viewer/editor berbasis **Tauri 2 + Vue 3** dengan fitur:
 
@@ -38,7 +38,7 @@ Aplikasi desktop markdown viewer/editor berbasis **Tauri 2 + Vue 3** dengan fitu
 - macOS jalur berbeda: LaunchServices mengirim Apple Event, bukan argv — ditangani `RunEvent::Opened { urls }` (bukan setup).
 - Frontend menerima file baru via event `cm:open-file` (fallback command `take_startup_file` supaya tak hilang jika event datang sebelum listener siap).
 - Set default aktif di Linux (developer machine): `scripts/install-default-viewer.sh [path_binary]` — buat desktop entry di `~/.local/share/applications`, lalu `xdg-mime default` untuk `text/markdown`.
-- Windows/macOS set default via OS: klik kanan file -> Open with -> set chillMarkdown sebagai default (atau Default Apps di Settings).
+- Windows/macOS set default via OS: klik kanan file -> Open with -> set Chill Markdown sebagai default (atau Default Apps di Settings).
 
 ## Auto updater
 - Plugin rust `tauri-plugin-updater` + `tauri-plugin-process` (relaunch), capability `updater:default` + `process:allow-restart`.

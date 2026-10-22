@@ -34,7 +34,12 @@ dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-- *belum ada perubahan baru*
+### Changed
+
+- Rebrand: nama aplikasi menjadi **Chill Markdown** (window title, dialog, About, desktop entry Linux, `productName` bundle; binary tetap `chillmarkdown` agar script default-viewer & asset updater tidak berubah).
+- Ikon aplikasi baru yang lebih elegan: squircle gradien indigo-slate dengan sheen, glyph markdown "M↓" putih gradien + glow lembut, dan aksen dot teal chill (regenerate semua ukuran via `tauri icon`).
+
+### Fixed
 
 ## [1.0.0] - 2026-10-22
 

@@ -1,0 +1,39 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#48527f"/>
+      <stop offset="0.45" stop-color="#2a3150"/>
+      <stop offset="1" stop-color="#13182b"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.01"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c3d4f7"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#57dfc0"/>
+      <stop offset="1" stop-color="#2ba68e"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="228" fill="url(#sheen)"/>
+  <rect x="5" y="5" width="1014" height="1014" rx="223" fill="none" stroke="url(#edge)" stroke-width="10"/>
+
+  <g fill="none" stroke="url(#glyph)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,-4)">
+    <path d="M270 660 L270 424 L372 556 L474 424 L474 660"/>
+    <path d="M612 424 L612 648"/>
+    <path d="M552 590 L612 650 L672 590"/>
+  </g>
+
+  <circle cx="724" cy="660" r="24" fill="url(#teal)"/>
+</svg>

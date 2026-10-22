@@ -1,4 +1,4 @@
-# daftar tugas chillMarkdown
+# daftar tugas Chill Markdown
 
 > Aturan: setiap kali satu tugas selesai, ubah statusnya jadi `[x]` dan tulis catatan singkat di kolom Notes. Jangan hapus tugas yang sudah selesai.
 
@@ -30,3 +30,4 @@
 | 24 | Link buymeacoffee di About | [x] | tombol "Buy me a coffee" (icon cangkir SVG) di about links, buka https://buymeacoffee.com/amdkholil via `openUrl`; hover accent oranye `.about-link-highlight` |
 | 25 | Icon Save vs Save-as dibedakan | [x] | Save tetap floppy disk klasik; Save-as ganti icon file-plus (dokumen dengan lipat sudut + tanda plus) agar beda dari save; tooltip tetap "Save as new file" |
 | 26 | Release v1.1.0 | [x] | bump versi 3 file (`package.json`, `tauri.conf.json`, `Cargo.toml`+lock); CHANGELOG 1.1.0 (release notes); README tambah fitur properties/about/split-resizable; git init + push ke remote (SSH); clippy collapsible-if fix; regenerate keypair signing updater dengan password (~/.tauri/*.key + .pwd, chmod 600), pubkey baru di `tauri.conf.json`, secrets GitHub di-set via `gh secret set`; tag v1.1.0 → workflow release build 3 OS sukses (14 asset + latest.json ter-sign), publish draft; CI main success |
+| 27 | Ikon baru + rebrand "Chill Markdown" | [x] | desain SVG squircle gradien indigo + sheen + glyph "M↓" putih gradien + glow + dot teal; rasterize via Chrome headless (1024, transparan) → `tauri icon` regenerasi semua ikon (incl. icns/ico); label diubah ke "Chill Markdown" di tauri.conf (productName + `mainBinaryName: chillmarkdown` tetap), window title, lib.rs dialog title, index.html, brand toolbar, About (nama/tooltip/aria), DEFAULT_MD, install-default-viewer.sh, README/plan/agents/tasks |

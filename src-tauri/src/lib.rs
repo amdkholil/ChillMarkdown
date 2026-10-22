@@ -62,7 +62,7 @@ async fn confirm_discard(app: tauri::AppHandle, message: String) -> bool {
     tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .message(message)
-            .title("chillMarkdown")
+            .title("Chill Markdown")
             .buttons(MessageDialogButtons::OkCancelCustom("Continue".into(), "Cancel".into()))
             .blocking_show()
     })

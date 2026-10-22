@@ -1,4 +1,4 @@
-# chillMarkdown
+# Chill Markdown
 
 [![CI](https://github.com/amdkholil/ChillMarkdown/actions/workflows/ci.yml/badge.svg)](https://github.com/amdkholil/ChillMarkdown/actions/workflows/ci.yml)
 [![Release](https://github.com/amdkholil/ChillMarkdown/actions/workflows/release.yml/badge.svg)](https://github.com/amdkholil/ChillMarkdown/actions/workflows/release.yml)
@@ -55,7 +55,7 @@ bun run build
   cd src-tauri && cargo build --release && cd ..
   ./scripts/install-default-viewer.sh     # desktop entry + xdg-mime default
   ```
-- **Windows / macOS**: install paket hasil `bun run tauri build`, lalu klik kanan file → *Open with* → pilih chillMarkdown → *Always*.
+- **Windows / macOS**: install paket hasil `bun run tauri build`, lalu klik kanan file → *Open with* → pilih Chill Markdown → *Always*.
   Double-click file berikutnya langsung membuka di app (multi-open diarahkan ke window yang sudah terbuka).
 
 ## Shortcut

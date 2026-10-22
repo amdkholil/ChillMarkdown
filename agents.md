@@ -3,7 +3,7 @@
 Panduan untuk coding agent yang bekerja di repo ini.
 
 ## Ringkasan project
-**chillMarkdown** — aplikasi desktop markdown viewer/editor berbasis **Tauri 2 (Rust) + Vue 3 + Vite**.
+**Chill Markdown** — aplikasi desktop markdown viewer/editor berbasis **Tauri 2 (Rust) + Vue 3 + Vite**.
 Fitur: navigasi internal (TOC kanan), mermaid, export PDF, split editor, light/dark mode, LaTeX, zoom.
 
 ## Struktur
@@ -65,3 +65,4 @@ mengikuti folder default Documents.
 - `preview` mengandalkan unit `em`, karena zoom diaplikasikan lewat `font-size` pada container preview.
 - Release: push tag `vX.Y.Z` (annotated) memicu workflow build 3 OS ke **draft release** — selalu publish manual setelah run selesai: `gh release edit vX.Y.Z --draft=false`. Re-release (build ulang) = hapus tag lokal+remote, ulangi tag dari commit HEAD, push ulang; tauri-action otomatis replace asset release lama.
 - Secrets updater di-set ulang via `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/chillmarkdown-updater.key` dan `--body "$(cat ~/.tauri/chillmarkdown-updater.pwd)"` untuk password. Remote git: SSH (`git@github.com:amdkholil/ChillMarkdown.git`).
+- Ikon aplikasi: sumber desain di `scripts/app-icon.svg`; regenerasi semua ikon dengan `bun x tauri icon scripts/app-icon.svg` (menerima SVG langsung). `productName` = "Chill Markdown" tapi `mainBinaryName` tetap `chillmarkdown` — jangan diganti salah satu saja (script default-viewer & nama asset updater bergantung pada binary ini).

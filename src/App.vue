@@ -68,7 +68,7 @@ md.core.ruler.push("chill_heading_ids", (state) => {
 
 /* ---------- state ---------- */
 
-const DEFAULT_MD = `# chillMarkdown
+const DEFAULT_MD = `# Chill Markdown
 
 Welcome. This is a markdown **viewer** with **LaTeX** ($e^{i\\pi}+1=0$),
 **mermaid diagrams**, in-document navigation in the right panel, and zoom
@@ -106,7 +106,7 @@ sequenceDiagram
 
 \`\`\`rust
 fn main() {
-    println!("Hello, chillMarkdown!");
+    println!("Hello, Chill Markdown!");
 }
 \`\`\`
 
@@ -961,7 +961,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app" :data-theme="theme">
     <header class="toolbar">
-      <div class="brand">🌴 chillMarkdown</div>
+      <div class="brand">🌴 Chill Markdown</div>
 
       <div class="toolbar-group">
         <button class="btn icon-btn" v-tooltip="'Open markdown file'" aria-label="Open" @click="openFile">
@@ -1049,7 +1049,7 @@ onBeforeUnmount(() => {
         </svg>
       </button>
 
-      <button class="btn icon-btn" v-tooltip="'About chillMarkdown'" aria-label="About" @click="openAbout">
+      <button class="btn icon-btn" v-tooltip="'About Chill Markdown'" aria-label="About" @click="openAbout">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
           <path d="M9.6 9.2a2.5 2.5 0 1 1 3.6 2.26c-.72.4-1.2.94-1.2 1.74v.3" />
@@ -1180,7 +1180,7 @@ onBeforeUnmount(() => {
 
     <transition name="modal">
       <div v-if="showAbout" class="modal-backdrop" @click.self="showAbout = false">
-        <div class="modal about-modal" role="dialog" aria-label="About chillMarkdown">
+        <div class="modal about-modal" role="dialog" aria-label="About Chill Markdown">
           <header class="modal-head">
             <div class="modal-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1198,7 +1198,7 @@ onBeforeUnmount(() => {
             <div class="about-brand">
               <span class="about-logo">🌴</span>
               <div class="about-name-wrap">
-                <span class="about-name">chillMarkdown</span>
+                <span class="about-name">Chill Markdown</span>
                 <span class="about-version">v{{ appVersion }}</span>
               </div>
             </div>
