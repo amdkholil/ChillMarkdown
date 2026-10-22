@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories={{{categories}}}
+Comment={{comment}}
+Exec={{exec}} %F
+Icon={{icon}}
+Name={{name}}
+StartupWMClass={{exec}}
+Terminal=false
+Type=Application
+MimeType={{mime_type}}
+Keywords=markdown;md;viewer;editor;chill;

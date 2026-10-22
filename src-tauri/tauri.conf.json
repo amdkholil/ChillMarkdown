@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Productivity",
     "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
@@ -39,9 +40,14 @@
         "name": "Markdown document (long ext)",
         "description": "Markdown document",
         "ext": ["markdown"],
-        "mimeType": "text/markdown"
+        "mimeType": "text/x-markdown"
       }
     ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "deb/app.desktop"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -41,6 +41,8 @@ dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **File association Linux**: aplikasi tidak muncul di menu klik kanan *Open With* / *Recommended Applications* di GNOME. Penyebab: desktop entry bawaan Tauri merender baris `Exec` tanpa field code `%f`/`%F`. Diperbaiki dengan custom template `src-tauri/deb/app.desktop` (`Exec={{exec}} %F`), pemetaan MIME `text/markdown` & `text/x-markdown`, serta script `install-default-viewer.sh` yang otomatis menginstall ikon dan mendaftarkan asosiasi via `gio mime`.
+
 ## [1.0.0] - 2026-10-22
 
 ### Added
