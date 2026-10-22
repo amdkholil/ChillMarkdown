@@ -194,10 +194,10 @@ pub fn run() {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             tauri::RunEvent::Opened { urls } => {
                 for url in urls {
-                    if let Ok(path) = url.to_file_path() {
-                        if markdown_ext(&path.to_string_lossy()) {
-                            open_file_path(_app, &path.to_string_lossy());
-                        }
+                    if let Ok(path) = url.to_file_path()
+                        && markdown_ext(&path.to_string_lossy())
+                    {
+                        open_file_path(_app, &path.to_string_lossy());
                     }
                 }
             }
