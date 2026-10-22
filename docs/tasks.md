@@ -1,0 +1,31 @@
+# daftar tugas chillMarkdown
+
+> Aturan: setiap kali satu tugas selesai, ubah statusnya jadi `[x]` dan tulis catatan singkat di kolom Notes. Jangan hapus tugas yang sudah selesai.
+
+| # | Tugas | Status | Notes |
+|---|---|---|---|
+| 1 | Install dependencies (markdown-it, mermaid, katex, highlight.js, html2pdf.js) | [x] | 2026-10-22, html2pdf.js@0.14 browser-only (aman untuk Vite) |
+| 2 | Buat docs/plan.md, docs/tasks.md, agents.md | [x] | 2026-10-22 |
+| 3 | Tambah tauri-plugin-dialog + file I/O commands di src-tauri | [x] | commands: documents_dir, show_open_dialog, show_save_dialog, confirm_discard, read_file, save_file, save_file_bytes |
+| 4 | Update capabilities & register plugin di lib.rs | [x] | `dialog:default` + `tauri_plugin_dialog::init()` |
+| 5 | Rewrite src/App.vue (preview, TOC, mermaid, LaTeX, zoom, theme, edit, PDF) | [x] | heading id via core rule + dedup; mermaid lazy-import; interop plugin katex diuji via node script |
+| 6 | Update tauri.conf.json (judul, ukuran window) | [x] | title "chillMarkdown", 1100x720, min 600x400 |
+| 7 | Verifikasi `bun run build` + `cargo check` | [x] | keduanya pass (chunk size warning besar dari mermaid/katex/html2pdf — normal) |
+| 8 | File association: args CLI -> open file (single-instance plugin), event `cm:open-file` + `take_startup_file` | [x] | 2026-10-22 |
+| 9 | bundle.fileAssociations (md/markdown) + scripts/install-default-viewer.sh | [x] | txt sengaja tidak diasosiasikan (risiko override text editor lain); .txt masih bisa dibuka via "Buka" |
+| 10 | Dukungan 3 OS utama: Linux/Windows/macOS | [x] | mac: RunEvent::Opened + Reopen; shortcut Ctrl/Cmd; font stack mac; single-instance fokus window; docs lintas OS ditulis di plan.md & agents.md (verifikasi build mac/windows perlu mesin terkait) |
+| 11 | README, CHANGELOG, SECURITY + versi 1.0.0 | [x] | versi di-sync: package.json, tauri.conf.json, Cargo.toml + Cargo.lock |
+| 12 | Lisensi Apache 2.0 | [x] | file LICENSE lengkap + metadata license di Cargo.toml & package.json, README bagian Lisensi |
+| 13 | Repository URL + GitHub Actions build | [x] | repository di package.json/Cargo.toml (+README); ci.yml (check 3 OS) & release.yml (tag v* → draft release via tauri-action, ubuntu/windows/macos) |
+| 14 | Auto updater | [x] | tauri-plugin-updater + process; kepair signer dibuat di ~/.tauri/chillmarkdown-updater.key(.pub); endpoint GitHub `latest.json`; UI cek otomatis (4 dtk) + tombol update + Cmd/Ctrl+U; release.yml pakai secret TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]; mac perlu codesign untuk produksi —Catatan |
+| 15 | UI lokalisasi EN + tombol ber-icon | [x] | UI & toast & dokumen default ke Inggris; toolbar Open/Save/Save-as/Edit/Done/PDF/zoom/theme/update pakai inline SVG icon; dialog confirm Rust jadi Continue/Cancel; tooltip + aria-label ditambah |
+| 16 | File properties modal | [x] | tombol info di toolbar; command `file_info` (size/created/modified epoch millis); modal berisi name/path/type/size/timestamps + stats (words/chars/lines/headings/code blocks/mermaid/reading time); close via ×, klik backdrop, Esc (prioritas di atas esc-editor) |
+| 17 | Tooltip kustom | [x] | directive `v-tooltip` di App.vue: delay 300ms, show instan saat focus-in, posisi fixed di atas/bawah (auto, clamp viewport), tema-aware, hilang saat click/scroll/mouseleave; semua `title` native tombol diganti (aria-label dipertahankan) |
+| 18 | Fix crash dialog (force close saat klik Buka/Open di tauri dev) | [x] | `blocking_pick_file`/`blocking_save_file`/`blocking_show` dipanggil dari main thread (sync command) → event loop GTK macet; fix: command dialog dibuat `async fn` + `tauri::async_runtime::spawn_blocking` sesuai rekomendasi plugin dialog |
+| 19 | Fix modal file properties tidak muncul | [x] | `value.startsWith('—')` di class binding kelempar TypeError untuk baris numeric (Headings/Code blocks/Mermaid) → render modal gagal senyap; fix: semua nilai di-(String)kan + guard `String(value).startsWith` |
+| 20 | Split editor resizable | [x] | divider drag antara textarea & preview via Pointer Events (setPointerCapture, work di mouse/touch/stylus), clamp 15-70% (dihitung relatif ke lebar minus panel TOC), persist localStorage `cm:split`, reset double-click ke 38%, keyboard: Left/Right ±2% + focus-visible, saat drag disabled pointer-events preview/TOC |
+| 21 | Multi-file tabs | [x] | state refactor: tabs[] + activeTabId, content/currentPath/dirty jadi computed proxy ke tab aktif (kode existing tak berubah besar); tabstrip UI (active highlight, dirty dot, close per tab, middle-click close, new tab button); open file → tab baru atau re-activate jika path sama; OS-open (single-instance) juga multi-tab; detail/smple flow; shortcut Ctrl/Cmd+T (new), Ctrl/Cmd+W (close, confirm unsaved), Ctrl/Cmd+Alt+←/→ cycle tab; localStorage draft tetap per aktif tab |
+| 22 | Fix: garis split tidak mengikuti kursor | [x] | root cause: flex-basis editor % dihitung terhadap lebar total workspace (termasuk TOC), tapi rasio dihitung relatif (total − TOC) + offset divider; fix: editor/divider/preview dibungkus `.split-area` (TOC di luar), rasio dihitung terhadap `split-area`, editor `width: calc(ratio% - 4px)` (setengah lebar divider+margins) sehingga tepi editor pas di bawah kursor; rasio dtg halus (3 desimal) |
+| 23 | About dialog + toolbar polish | [x] | tombol `?` di kanan toggle dark/light (icon SVG 3-line + v-tooltip); modal About: logo 🌴 + nama + versi runtime (`getVersion()` dari `@tauri-apps/api/app`, fallback "—"), deskripsi fitur, link GitHub repo + Report issue via `openUrl`, meta lisensi Apache-2.0 dan shortcut updater; Esc menutup modal terproteksi (about → props → editor); hapus file-label di toolbar kiri toggle theme (info file kini hanya di tab aktif + Properties) |
+| 24 | Link buymeacoffee di About | [x] | tombol "Buy me a coffee" (icon cangkir SVG) di about links, buka https://buymeacoffee.com/amdkholil via `openUrl`; hover accent oranye `.about-link-highlight` |
+| 25 | Icon Save vs Save-as dibedakan | [x] | Save tetap floppy disk klasik; Save-as ganti icon file-plus (dokumen dengan lipat sudut + tanda plus) agar beda dari save; tooltip tetap "Save as new file" |

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "chillmarkdown",
+  "version": "1.1.0",
+  "identifier": "com.kholil.chillmarkdown",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "chillMarkdown",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 600,
+        "minHeight": 400
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "fileAssociations": [
+      {
+        "name": "Markdown document",
+        "description": "Markdown document",
+        "ext": ["md"],
+        "mimeType": "text/markdown"
+      },
+      {
+        "name": "Markdown document (long ext)",
+        "description": "Markdown document",
+        "ext": ["markdown"],
+        "mimeType": "text/markdown"
+      }
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCRkRGNDA0NzM0MjQwOUYKUldTZlFFSnpCUFQ5V3dUeHo2Z2ZmbXc2NGZmcHVEdkk4YWY0WUg2aVFKcWF2KzdEamlDZzBtMFUK",
+      "endpoints": [
+        "https://github.com/amdkholil/ChillMarkdown/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
