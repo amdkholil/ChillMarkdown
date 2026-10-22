@@ -567,16 +567,12 @@ async function exportPdf() {
     const holder = document.createElement("div");
     holder.className = "md-content print-flow";
     holder.dataset.theme = theme.value;
-    holder.style.position = "absolute";
-    holder.style.left = "0";
-    holder.style.top = "0";
+    holder.style.display = "block";
     holder.style.width = "794px";
     holder.style.padding = "32px";
     holder.style.boxSizing = "border-box";
     holder.style.backgroundColor = bg;
     holder.style.color = fg;
-    holder.style.zIndex = "-9999";
-    holder.style.pointerEvents = "none";
 
     holder.style.setProperty("--bg", bg);
     holder.style.setProperty("--fg", fg);
@@ -614,9 +610,6 @@ async function exportPdf() {
           scale: 2,
           useCORS: true,
           backgroundColor: bg,
-          scrollX: 0,
-          scrollY: 0,
-          windowWidth: 800,
         },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy"] },
