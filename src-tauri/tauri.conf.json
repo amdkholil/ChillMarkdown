@@ -53,7 +53,7 @@
     "updater": {
       "active": true,
       "dialog": false,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCRkRGNDA0NzM0MjQwOUYKUldTZlFFSnpCUFQ5V3dUeHo2Z2ZmbXc2NGZmcHVEdkk4YWY0WUg2aVFKcWF2KzdEamlDZzBtMFUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDMjU2RDM2OUQ4RkJGMDQKUldRRXY0K2RObTBsM0xua3M4WVZmQnkzMmdwQVplOHFLZ1hBNzJqTGNjZlVQUDhDeG5mVWdkL1IK",
       "endpoints": [
         "https://github.com/amdkholil/ChillMarkdown/releases/latest/download/latest.json"
       ]
