@@ -560,27 +560,25 @@ async function exportPdf() {
     if (!path) return;
     await nextTick();
 
-    const isDark = theme.value === "dark";
-    const bg = isDark ? "#14171c" : "#ffffff";
-    const fg = isDark ? "#e6eaf0" : "#1c2024";
-
     const holder = document.createElement("div");
     holder.className = "md-content print-flow";
-    holder.dataset.theme = theme.value;
+    holder.dataset.theme = "light";
     holder.style.display = "block";
-    holder.style.width = "794px";
-    holder.style.padding = "32px";
+    holder.style.width = "100%";
+    holder.style.maxWidth = "100%";
+    holder.style.padding = "0";
     holder.style.boxSizing = "border-box";
-    holder.style.backgroundColor = bg;
-    holder.style.color = fg;
+    holder.style.backgroundColor = "#ffffff";
+    holder.style.color = "#1c2024";
 
-    holder.style.setProperty("--bg", bg);
-    holder.style.setProperty("--fg", fg);
-    holder.style.setProperty("--border", isDark ? "#2c333d" : "#d8dde5");
-    holder.style.setProperty("--panel", isDark ? "#1b2027" : "#ffffff");
-    holder.style.setProperty("--panel-alt", isDark ? "#232933" : "#eef0f3");
-    holder.style.setProperty("--code-bg", isDark ? "#10141a" : "#f0f2f5");
-    holder.style.setProperty("--accent", isDark ? "#7aa5e5" : "#4c7dd1");
+    // Tetapkan custom properties standar dokumen kertas (light)
+    holder.style.setProperty("--bg", "#ffffff");
+    holder.style.setProperty("--fg", "#1c2024");
+    holder.style.setProperty("--border", "#d8dde5");
+    holder.style.setProperty("--panel", "#ffffff");
+    holder.style.setProperty("--panel-alt", "#eef0f3");
+    holder.style.setProperty("--code-bg", "#f0f2f5");
+    holder.style.setProperty("--accent", "#4c7dd1");
 
     holder.innerHTML = previewRef.value.innerHTML;
 
@@ -604,12 +602,12 @@ async function exportPdf() {
     try {
       const html2pdf = (await import("html2pdf.js/dist/html2pdf.js")).default;
       const opt = {
-        margin: [10, 10, 12, 10],
+        margin: [15, 15, 15, 15],
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: {
           scale: 2,
           useCORS: true,
-          backgroundColor: bg,
+          backgroundColor: "#ffffff",
         },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy"] },
@@ -2221,24 +2219,71 @@ html[data-theme="dark"] body {
 .print-flow {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
   line-height: 1.6;
+  background: #ffffff !important;
+  color: #1c2024 !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.print-flow h1,
+.print-flow h2,
+.print-flow h3,
+.print-flow h4,
+.print-flow h5,
+.print-flow h6 {
+  color: #111827 !important;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+.print-flow p,
+.print-flow li,
+.print-flow td,
+.print-flow th {
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .print-flow pre,
-.print-flow table,
+.print-flow pre.hljs {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  background: #f6f8fa !important;
+  color: #24292f !important;
+  border: 1px solid #d0d7de !important;
+  border-radius: 6px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.print-flow pre.hljs code {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.print-flow table {
+  width: 100% !important;
+  table-layout: auto;
+  border-collapse: collapse;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.print-flow th,
+.print-flow td {
+  border: 1px solid #d0d7de !important;
+}
+
 .print-flow .mermaid-block,
 .print-flow .katex-display {
   page-break-inside: avoid;
   break-inside: avoid;
 }
 
-.print-flow h1,
-.print-flow h2,
-.print-flow h3 {
-  page-break-after: avoid;
-  break-after: avoid;
-}
-
 .print-flow .mermaid-block svg {
-  max-width: 100%;
+  max-width: 100% !important;
+  height: auto !important;
 }
 </style>
