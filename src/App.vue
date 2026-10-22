@@ -559,18 +559,65 @@ async function exportPdf() {
     });
     if (!path) return;
     await nextTick();
+
+    const isDark = theme.value === "dark";
+    const bg = isDark ? "#14171c" : "#ffffff";
+    const fg = isDark ? "#e6eaf0" : "#1c2024";
+
     const holder = document.createElement("div");
-    holder.className = `md-content print-flow`;
+    holder.className = "md-content print-flow";
     holder.dataset.theme = theme.value;
-    holder.style.cssText = "position:fixed;left:-20000px;top:0;width:780px;padding:32px;background:var(--bg);color:var(--fg);z-index:-1;";
+    holder.style.position = "absolute";
+    holder.style.left = "0";
+    holder.style.top = "0";
+    holder.style.width = "794px";
+    holder.style.padding = "32px";
+    holder.style.boxSizing = "border-box";
+    holder.style.backgroundColor = bg;
+    holder.style.color = fg;
+    holder.style.zIndex = "-9999";
+    holder.style.pointerEvents = "none";
+
+    holder.style.setProperty("--bg", bg);
+    holder.style.setProperty("--fg", fg);
+    holder.style.setProperty("--border", isDark ? "#2c333d" : "#d8dde5");
+    holder.style.setProperty("--panel", isDark ? "#1b2027" : "#ffffff");
+    holder.style.setProperty("--panel-alt", isDark ? "#232933" : "#eef0f3");
+    holder.style.setProperty("--code-bg", isDark ? "#10141a" : "#f0f2f5");
+    holder.style.setProperty("--accent", isDark ? "#7aa5e5" : "#4c7dd1");
+
     holder.innerHTML = previewRef.value.innerHTML;
+
+    // Pastikan SVG (seperti Mermaid) memiliki dimensi fisik yang terukur
+    const originalSvgs = previewRef.value.querySelectorAll("svg");
+    const clonedSvgs = holder.querySelectorAll("svg");
+    clonedSvgs.forEach((svg, idx) => {
+      const orig = originalSvgs[idx];
+      if (orig) {
+        const rect = orig.getBoundingClientRect();
+        if (rect.width > 0 && !svg.getAttribute("width")) {
+          svg.setAttribute("width", String(Math.round(rect.width)));
+        }
+        if (rect.height > 0 && !svg.getAttribute("height")) {
+          svg.setAttribute("height", String(Math.round(rect.height)));
+        }
+      }
+    });
+
     document.body.appendChild(holder);
     try {
       const html2pdf = (await import("html2pdf.js/dist/html2pdf.js")).default;
       const opt = {
-        margin: [8, 8, 10, 8],
-        image: { type: "jpeg", quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
+        margin: [10, 10, 12, 10],
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: bg,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 800,
+        },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy"] },
       };
@@ -2176,6 +2223,26 @@ html[data-theme="dark"] body {
 
 .cm-tooltip.visible {
   opacity: 1;
+}
+
+.print-flow {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+.print-flow pre,
+.print-flow table,
+.print-flow .mermaid-block,
+.print-flow .katex-display {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.print-flow h1,
+.print-flow h2,
+.print-flow h3 {
+  page-break-after: avoid;
+  break-after: avoid;
 }
 
 .print-flow .mermaid-block svg {

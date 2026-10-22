@@ -41,6 +41,7 @@ dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Export PDF kosong (blank)**: PDF yang diekspor sebelumnya menghasilkan halaman putih kosong. Penyebabnya adalah elemen penampung offscreen ditaruh di `left: -20000px`, sehingga `html2canvas` menangkap canvas di luar batas elemen (x: 0 sampai 800), serta CSS variables warna latar/teks tidak ter-resolve di iframe `html2canvas`. Diperbaiki dengan memposisikan penampung di `left: 0; top: 0; z-index: -9999` (tak tampak di layar), menetapkan warna literal & inline CSS variables lengkap, menyinkronkan dimensi bounding box SVG Mermaid asli, dan mengunci `scrollX: 0, scrollY: 0`.
 - **File association Linux**: aplikasi tidak muncul di menu klik kanan *Open With* / *Recommended Applications* di GNOME. Penyebab: desktop entry bawaan Tauri merender baris `Exec` tanpa field code `%f`/`%F`. Diperbaiki dengan custom template `src-tauri/deb/app.desktop` (`Exec={{exec}} %F`), pemetaan MIME `text/markdown` & `text/x-markdown`, serta script `install-default-viewer.sh` yang otomatis menginstall ikon dan mendaftarkan asosiasi via `gio mime`.
 
 ## [1.0.0] - 2026-10-22
