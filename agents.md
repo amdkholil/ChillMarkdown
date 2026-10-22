@@ -23,7 +23,7 @@ SECURITY.md                 kebijakan keamanan
 LICENSE                     Apache License 2.0
 .github/workflows/ci.yml    CI lintas OS: bun install, vite build, cargo check, clippy (-D warnings), cargo build debug
 .github/workflows/release.yml    build installer 3 OS via tauri-apps/tauri-action, dipicu push tag v* (draft release), butuh secrets TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)
-plugins: updater            auto updater: cek otomatis + tombol update di App.vue; endpoint latest.json GitHub Releases; keypair signer di ~/.tauri/chillmarkdown-updater.key (jangan pernah commit private key)
+plugins: updater            auto updater: cek otomatis + tombol update di App.vue; endpoint latest.json GitHub Releases; keypair signer di ~/.tauri/chillmarkdown-updater.key (.pub untuk pubkey tauri.conf.json, password terpisah di ~/.tauri/chillmarkdown-updater.pwd — chmod 600, jangan pernah commit private key/password)
 ```
 
 ## Perintah
@@ -63,3 +63,5 @@ mengikuti folder default Documents.
 - Semua dialog file (open/save/export) ada di sisi Rust: `show_open_dialog`, `show_save_dialog`, `documents_dir`.
 - File dibuka dari OS masuk sebagai argv: ditangani `tauri-plugin-single-instance` + event `cm:open-file` + command `take_startup_file` (fallback supaya payload tidak hilang sebelum listener frontend siap).
 - `preview` mengandalkan unit `em`, karena zoom diaplikasikan lewat `font-size` pada container preview.
+- Release: push tag `vX.Y.Z` (annotated) memicu workflow build 3 OS ke **draft release** — selalu publish manual setelah run selesai: `gh release edit vX.Y.Z --draft=false`. Re-release (build ulang) = hapus tag lokal+remote, ulangi tag dari commit HEAD, push ulang; tauri-action otomatis replace asset release lama.
+- Secrets updater di-set ulang via `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/chillmarkdown-updater.key` dan `--body "$(cat ~/.tauri/chillmarkdown-updater.pwd)"` untuk password. Remote git: SSH (`git@github.com:amdkholil/ChillMarkdown.git`).
