@@ -1,6 +1,6 @@
 [package]
 name = "chillmarkdown"
-version = "1.1.0"
+version = "1.2.0"
 description = "Markdown viewer/editor dengan mermaid, LaTeX, & export PDF"
 license = "Apache-2.0"
 repository = "https://github.com/amdkholil/ChillMarkdown"

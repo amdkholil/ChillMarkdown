@@ -5,6 +5,23 @@ Semua perubahan penting pada project ini didokumentasikan di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-23
+
+### Added
+
+- Tombol manual **Check for updates** di toolbar utama (icon orbit ring + panah elegan) dan di modal **About** dengan indikator loading/animasi putar (`cm-spin`) saat mengecek update.
+
+### Changed
+
+- Mengganti icon/emoji pohon kelapa `🌴` di header toolbar dan modal About dengan icon SVG resmi Chill Markdown yang elegan dan serasi dengan tema UI.
+- Rebrand aplikasi: nama resmi menjadi **Chill Markdown** di seluruh antarmuka dan metadata.
+
+### Fixed
+
+- **Format Export PDF**: teks panjang tidak lagi terpotong di tepi margin dan hasil dokumen selalu menggunakan tema kertas putih bersih (seperti dokumen Microsoft Word / print) meskipun aplikasi sedang dalam dark mode. Ditambahkan auto word-wrapping (`word-break: break-word`, `overflow-wrap: break-word`, `white-space: pre-wrap` untuk code block), margin standar cetak 15 mm, dan lebar dokumen adaptif 100%.
+- **Export PDF kosong (blank)**: PDF yang diekspor sebelumnya menghasilkan halaman putih kosong. Penyebabnya adalah elemen penampung offscreen ditaruh di `left: -20000px`, sehingga `html2canvas` menangkap canvas di luar batas elemen (x: 0 sampai 800), serta CSS variables warna latar/teks tidak ter-resolve di iframe `html2canvas`. Diperbaiki dengan memposisikan penampung di `left: 0; top: 0; z-index: -9999` (tak tampak di layar), menetapkan warna literal & inline CSS variables lengkap, menyinkronkan dimensi bounding box SVG Mermaid asli, dan mengunci `scrollX: 0, scrollY: 0`.
+- **File association Linux**: aplikasi tidak muncul di menu klik kanan *Open With* / *Recommended Applications* di GNOME. Penyebab: desktop entry bawaan Tauri merender baris `Exec` tanpa field code `%f`/`%F`. Diperbaiki dengan custom template `src-tauri/deb/app.desktop` (`Exec={{exec}} %F`), pemetaan MIME `text/markdown` & `text/x-markdown`, serta script `install-default-viewer.sh` yang otomatis menginstall ikon dan mendaftarkan asosiasi via `gio mime`.
+
 ## [1.1.0] - 2026-10-22
 
 ### Fixed
@@ -31,19 +48,6 @@ dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Custom tooltip** via directive `v-tooltip` menggantikan `title` native: muncul ~300 ms (bukan beberapa detik), instan saat tombol di-focus via keyboard, posisi fixed di atas/bawah dengan clamp ke viewport, tema-aware, hilang saat klik/scroll, `aria-label` tetap ada untuk aksesibilitas.
 - **Split editor resizable**: divider antar textarea dan preview bisa di-drag (Pointer Events — mouse/touch), clamp 15 %–70 % dengan memperhitungkan lebar panel TOC, persist ke localStorage `cm:split`, double-click reset ke default 38 %, dan bisa diatur via arrow keys saat divider di-focus (ada focus ring).
 - **Multi-file tabs**: buka beberapa file sekaligus dalam tab strip di bawah toolbar — klik untuk switch, `× »` atau middle-click menutup tab (konfirmasi bila ada perubahan belum disimpan), tombol `+` membuat tab baru, `Ctrl/Cmd+T` tab baru, `Ctrl/Cmd+W` tutup tab, `Ctrl/Cmd+Alt+←/→` pindah tab. File yang sama tidak dibuka dua kali (di-activate + reload). State single-file (`content`, `currentPath`, `dirty`) direfactor menjadi proxy computed ke tab aktif.
-
-## [Unreleased]
-
-### Changed
-
-- Rebrand: nama aplikasi menjadi **Chill Markdown** (window title, dialog, About, desktop entry Linux, `productName` bundle; binary tetap `chillmarkdown` agar script default-viewer & asset updater tidak berubah).
-- Ikon aplikasi baru yang lebih elegan: squircle gradien indigo-slate dengan sheen, glyph markdown "M↓" putih gradien + glow lembut, dan aksen dot teal chill (regenerate semua ukuran via `tauri icon`).
-
-### Fixed
-
-- **Format Export PDF**: teks panjang tidak lagi terpotong di tepi margin dan hasil dokumen selalu menggunakan tema kertas putih bersih (seperti dokumen Microsoft Word / print) meskipun aplikasi sedang dalam dark mode. Ditambahkan auto word-wrapping (`word-break: break-word`, `overflow-wrap: break-word`, `white-space: pre-wrap` untuk code block), margin standar cetak 15 mm, dan lebar dokumen adaptif 100%.
-- **Export PDF kosong (blank)**: PDF yang diekspor sebelumnya menghasilkan halaman putih kosong. Penyebabnya adalah elemen penampung offscreen ditaruh di `left: -20000px`, sehingga `html2canvas` menangkap canvas di luar batas elemen (x: 0 sampai 800), serta CSS variables warna latar/teks tidak ter-resolve di iframe `html2canvas`. Diperbaiki dengan memposisikan penampung di `left: 0; top: 0; z-index: -9999` (tak tampak di layar), menetapkan warna literal & inline CSS variables lengkap, menyinkronkan dimensi bounding box SVG Mermaid asli, dan mengunci `scrollX: 0, scrollY: 0`.
-- **File association Linux**: aplikasi tidak muncul di menu klik kanan *Open With* / *Recommended Applications* di GNOME. Penyebab: desktop entry bawaan Tauri merender baris `Exec` tanpa field code `%f`/`%F`. Diperbaiki dengan custom template `src-tauri/deb/app.desktop` (`Exec={{exec}} %F`), pemetaan MIME `text/markdown` & `text/x-markdown`, serta script `install-default-viewer.sh` yang otomatis menginstall ikon dan mendaftarkan asosiasi via `gio mime`.
 
 ## [1.0.0] - 2026-10-22
 

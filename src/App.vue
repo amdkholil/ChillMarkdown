@@ -751,9 +751,11 @@ async function openProperties() {
 
 const updateInfo = ref(null);
 const updating = ref(false);
+const checkingUpdate = ref(false);
 
 async function checkForUpdates(silent = false) {
   if (!isTauri()) return;
+  checkingUpdate.value = true;
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();
@@ -769,6 +771,8 @@ async function checkForUpdates(silent = false) {
     }
   } catch (err) {
     if (!silent) showToast("Failed to check for updates: " + err);
+  } finally {
+    checkingUpdate.value = false;
   }
 }
 
@@ -999,7 +1003,15 @@ onBeforeUnmount(() => {
 <template>
   <div class="app" :data-theme="theme">
     <header class="toolbar">
-      <div class="brand">🌴 Chill Markdown</div>
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="4" />
+          <path d="M7 15V9l3 3.5L13 9v6" />
+          <path d="M17 9v6" />
+          <path d="M15 13.5l2 2 2-2" />
+        </svg>
+        Chill Markdown
+      </div>
 
       <div class="toolbar-group">
         <button class="btn icon-btn" v-tooltip="'Open markdown file'" aria-label="Open" @click="openFile">
@@ -1071,6 +1083,22 @@ onBeforeUnmount(() => {
           <path d="M12 3v12" /><path d="M7 11l5 5 5-5" /><path d="M4 19h16" />
         </svg>
         <span>{{ updating ? "Updating…" : "Update v" + updateInfo.version }}</span>
+      </button>
+
+      <button
+        class="btn icon-btn"
+        :class="{ 'is-checking': checkingUpdate }"
+        :disabled="checkingUpdate"
+        v-tooltip="checkingUpdate ? 'Checking for updates…' : 'Check for updates (Ctrl+U)'"
+        aria-label="Check for updates"
+        @click="checkForUpdates(false)"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4.5 16.5c-1.5 1.26-2.5 3.19-2.5 5.5h20c0-2.31-1-4.24-2.5-5.5" />
+          <path d="M12 2v10" />
+          <path d="M8.5 8.5L12 12l3.5-3.5" />
+          <circle cx="12" cy="12" r="9" stroke-dasharray="4 3" />
+        </svg>
       </button>
 
       <button
@@ -1234,7 +1262,14 @@ onBeforeUnmount(() => {
           </header>
           <div class="modal-body">
             <div class="about-brand">
-              <span class="about-logo">🌴</span>
+              <div class="about-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2.5" y="2.5" width="19" height="19" rx="4.5" />
+                  <path d="M6.5 15.5V8.5l3.5 4 3.5-4v7" />
+                  <path d="M17.5 8.5v7" />
+                  <path d="M15 13l2.5 2.5 2.5-2.5" />
+                </svg>
+              </div>
               <div class="about-name-wrap">
                 <span class="about-name">Chill Markdown</span>
                 <span class="about-version">v{{ appVersion }}</span>
@@ -1268,9 +1303,19 @@ onBeforeUnmount(() => {
                   Buy me a coffee
                 </button>
               </li>
+              <li>
+                <button class="about-link" :disabled="checkingUpdate" @click="checkForUpdates(false)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9" stroke-dasharray="4 3" />
+                    <path d="M12 7v6" />
+                    <path d="M9 10.5L12 13.5l3-3.5" />
+                  </svg>
+                  {{ checkingUpdate ? "Checking for updates…" : "Check for updates" }}
+                </button>
+              </li>
               <li class="about-meta">
                 <span class="about-meta-item">License: Apache-2.0</span>
-                <span class="about-meta-item">Check for updates: Ctrl/Cmd + U</span>
+                <span class="about-meta-item">Shortcut: Ctrl/Cmd + U</span>
               </li>
             </ul>
           </div>
@@ -1351,9 +1396,18 @@ body {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-weight: 700;
   margin-right: 6px;
   white-space: nowrap;
+}
+
+.brand-icon {
+  width: 17px;
+  height: 17px;
+  color: var(--accent);
 }
 
 .toolbar-group {
@@ -1435,6 +1489,16 @@ body {
 .btn.update-btn svg {
   width: 15px;
   height: 15px;
+}
+
+.btn.is-checking svg {
+  animation: cm-spin 1.2s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes cm-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .workspace {
@@ -2047,9 +2111,17 @@ html[data-theme="dark"] .md-content .hljs-property {
 }
 
 .about-logo {
-  font-size: 34px;
-  line-height: 1;
-  filter: saturate(1.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+}
+
+.about-logo svg {
+  width: 100%;
+  height: 100%;
 }
 
 .about-name-wrap {
