@@ -21,6 +21,10 @@ dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Nonaktifkan context menu default browser (Back, Forward, Reload, Inspect Element) agar antarmuka desktop lebih bersih, dengan tetap mempertahankan aksi edit native pada input teks dan textarea editor.
 
+### Fixed
+
+- **Updater Private Member Error**: Memperbaiki error `TypeError: Cannot read private member from an object whose class did not declare it` saat install update. Object instance `Update` (yang memiliki private JS field `#rid` / `Resource`) sebelumnya terbungkus dalam `ref()` Vue yang mengubahnya menjadi reactive proxy. Objek asli kini disimpan dalam `shallowRef()`.
+
 ## [1.2.0] - 2026-10-23
 
 ### Added

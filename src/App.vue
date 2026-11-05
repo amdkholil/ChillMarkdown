@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import MarkdownIt from "markdown-it";
@@ -1054,6 +1054,7 @@ async function openProperties() {
 /* ---------- auto updater ---------- */
 
 const updateInfo = ref(null);
+const rawUpdate = shallowRef(null);
 const updating = ref(false);
 const checkingUpdate = ref(false);
 
@@ -1064,10 +1065,10 @@ async function checkForUpdates(silent = false) {
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();
     if (update) {
+      rawUpdate.value = update;
       updateInfo.value = {
         version: update.version,
         notes: update.body,
-        raw: update,
       };
       showToast("Update v" + update.version + " available — click the update button in the toolbar");
     } else if (!silent) {
@@ -1081,14 +1082,15 @@ async function checkForUpdates(silent = false) {
 }
 
 async function installUpdate() {
-  if (!updateInfo.value?.raw || updating.value || dirty.value) {
+  const update = rawUpdate.value;
+  if (!update || updating.value || dirty.value) {
     if (dirty.value) showToast("Save your changes before updating");
     return;
   }
   updating.value = true;
   try {
     const { relaunch } = await import("@tauri-apps/plugin-process");
-    await updateInfo.value.raw.downloadAndInstall();
+    await update.downloadAndInstall();
     showToast("Update installed — restarting…");
     await relaunch();
   } catch (err) {
