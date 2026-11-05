@@ -6,6 +6,8 @@ import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import * as katexPluginModule from "@vscode/markdown-it-katex";
 import "katex/dist/katex.min.css";
+import { remark } from "remark";
+import { visit } from "unist-util-visit";
 
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
@@ -126,35 +128,47 @@ let untitledSeq = 0;
 
 function makeTab(path = null, text = "") {
   const label = path ? null : (untitledSeq += 1) === 1 ? "untitled.md" : `untitled-${untitledSeq}.md`;
-  return { id: ++tabSeq, path, label, content: text, dirty: false };
+  return {
+    id: ++tabSeq,
+    path,
+    label,
+    content: text,
+    dirty: false,
+    history: [text],
+    historyIndex: 0,
+    historyLock: false,
+  };
 }
 
-const tabs = ref([makeTab(null, loadSaved())]);
-const activeTabId = ref(tabs.value[0].id);
+const tabs = ref([]);
+const activeTabId = ref(null);
 
 const activeTab = computed(
-  () => tabs.value.find((t) => t.id === activeTabId.value) ?? tabs.value[0]
+  () => tabs.value.find((t) => t.id === activeTabId.value) ?? null
 );
 
 const content = computed({
-  get: () => activeTab.value.content,
+  get: () => activeTab.value?.content ?? "",
   set: (v) => {
+    if (!activeTab.value) return;
     activeTab.value.content = v;
     activeTab.value.dirty = true;
   },
 });
 
 const currentPath = computed({
-  get: () => activeTab.value.path,
+  get: () => activeTab.value?.path ?? null,
   set: (v) => {
+    if (!activeTab.value) return;
     activeTab.value.path = v;
     activeTab.value.label = null;
   },
 });
 
 const dirty = computed({
-  get: () => activeTab.value.dirty,
+  get: () => activeTab.value?.dirty ?? false,
   set: (v) => {
+    if (!activeTab.value) return;
     activeTab.value.dirty = v;
   },
 });
@@ -163,7 +177,7 @@ const theme = ref(localStorage.getItem("cm:theme") ?? (matchMedia("(prefers-colo
 const zoom = ref(Number(localStorage.getItem("cm:zoom")) || 1);
 const editing = ref(false);
 const exporting = ref(false);
-const previewTarget = ref(tabs.value[0].content);
+const previewTarget = ref("");
 const activeId = ref(null);
 const toast = ref(null);
 const previewRef = ref(null);
@@ -179,8 +193,67 @@ function loadSaved() {
   }
 }
 
+/* ---------- undo / redo & editor history ---------- */
+
+const canUndo = computed(() => {
+  const tab = activeTab.value;
+  return tab && (tab.historyIndex ?? 0) > 0;
+});
+
+const canRedo = computed(() => {
+  const tab = activeTab.value;
+  return tab && (tab.historyIndex ?? 0) < ((tab.history?.length ?? 1) - 1);
+});
+
+function recordHistory(tab, val) {
+  if (!tab) return;
+  if (!tab.history) {
+    tab.history = [val];
+    tab.historyIndex = 0;
+    return;
+  }
+  if (tab.historyLock) return;
+  if (tab.history[tab.historyIndex] === val) return;
+
+  // truncate redo stack
+  tab.history = tab.history.slice(0, tab.historyIndex + 1);
+  tab.history.push(val);
+  if (tab.history.length > 100) {
+    tab.history.shift();
+  }
+  tab.historyIndex = tab.history.length - 1;
+}
+
+function undo() {
+  const tab = activeTab.value;
+  if (!tab || (tab.historyIndex ?? 0) <= 0) return;
+  tab.historyLock = true;
+  tab.historyIndex -= 1;
+  const prevVal = tab.history[tab.historyIndex];
+  tab.content = prevVal;
+  tab.dirty = true;
+  nextTick(() => {
+    tab.historyLock = false;
+  });
+}
+
+function redo() {
+  const tab = activeTab.value;
+  if (!tab || !tab.history || tab.historyIndex >= tab.history.length - 1) return;
+  tab.historyLock = true;
+  tab.historyIndex += 1;
+  const nextVal = tab.history[tab.historyIndex];
+  tab.content = nextVal;
+  tab.dirty = true;
+  nextTick(() => {
+    tab.historyLock = false;
+  });
+}
+
 let debounceTimer = null;
 watch(content, (val) => {
+  const tab = activeTab.value;
+  recordHistory(tab, val);
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     previewTarget.value = val;
@@ -190,9 +263,12 @@ watch(content, (val) => {
   }, 250);
 });
 
-watch(theme, (val) => {
+watch(theme, async (val) => {
   localStorage.setItem("cm:theme", val);
   document.documentElement.dataset.theme = val;
+  mermaidThemeInitialized = null;
+  await nextTick();
+  await renderMermaidBlocks();
 });
 
 watch(zoom, (val) => {
@@ -202,11 +278,12 @@ watch(zoom, (val) => {
 const previewHtml = computed(() => md.render(previewTarget.value));
 
 function tabLabel(tab) {
+  if (!tab) return "";
   if (tab.path) return tab.path.split(/[/\\]/).pop();
   return tab.label ?? "untitled.md";
 }
 
-const fileName = computed(() => tabLabel(activeTab.value));
+const fileName = computed(() => activeTab.value ? tabLabel(activeTab.value) : "");
 
 const zoomPercent = computed(() => `${Math.round(zoom.value * 100)}%`);
 const canZoomIn = computed(() => zoom.value < ZOOM_MAX - 0.001);
@@ -230,23 +307,168 @@ async function getMermaid() {
   return lib;
 }
 
+let renderSeq = 0;
 let mermaidSeq = 0;
+
+/* ---------- mermaid auto-detection (remark AST) ---------- */
+
+const MERMAID_KEYWORDS = [
+  "graph",
+  "flowchart",
+  "sequenceDiagram",
+  "classDiagram",
+  "stateDiagram",
+  "stateDiagram-v2",
+  "erDiagram",
+  "journey",
+  "gantt",
+  "pie",
+  "quadrantChart",
+  "requirementDiagram",
+  "gitGraph",
+  "mindmap",
+  "timeline",
+  "sankey-beta",
+  "xychart-beta",
+  "block-beta",
+  "packet-beta",
+  "architecture-beta",
+  "kanban",
+  "C4Context",
+  "C4Container",
+  "C4Component",
+  "C4Dynamic",
+  "C4Deployment",
+];
+
+function isMermaidKeyword(line) {
+  const trimmed = line.trim();
+  for (const kw of MERMAID_KEYWORDS) {
+    if (trimmed === kw || trimmed.startsWith(kw + " ") || trimmed.startsWith(kw + "\n") || trimmed.startsWith(kw + ":")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findFirstMeaningfulLine(code) {
+  const lines = code.split("\n");
+  let inFrontmatter = false;
+  let inDirective = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+
+    if (!trimmed) continue;
+
+    // Handle frontmatter --- ... ---
+    if (!inFrontmatter && trimmed === "---" && i === 0) {
+      inFrontmatter = true;
+      continue;
+    }
+    if (inFrontmatter) {
+      if (trimmed === "---") {
+        inFrontmatter = false;
+      }
+      continue;
+    }
+
+    // Handle directives %%{init: ...}%% (single-line or multi-line)
+    if (trimmed.startsWith("%%{")) {
+      if (!trimmed.endsWith("}%%")) {
+        inDirective = true;
+      }
+      continue;
+    }
+    if (inDirective) {
+      if (trimmed.endsWith("}%%")) {
+        inDirective = false;
+      }
+      continue;
+    }
+
+    // Handle comment %% ...
+    if (trimmed.startsWith("%%")) {
+      continue;
+    }
+
+    return trimmed;
+  }
+  return null;
+}
+
+async function detectCandidateMermaidBlocks(markdownText) {
+  if (!markdownText) return [];
+  const candidates = [];
+  try {
+    const ast = remark.parse(markdownText);
+    visit(ast, "code", (node) => {
+      const lang = (node.lang || "").trim().toLowerCase();
+      if (!lang || lang === "text") {
+        const val = node.value || "";
+        const firstLine = findFirstMeaningfulLine(val);
+        if (firstLine && isMermaidKeyword(firstLine)) {
+          candidates.push(val);
+        }
+      }
+    });
+  } catch {}
+  return candidates;
+}
 
 async function renderMermaidBlocks() {
   const root = previewRef.value;
   if (!root) return;
-  const blocks = root.querySelectorAll(".mermaid-block[data-code]");
-  if (!blocks.length) return;
+  const currentSeq = ++renderSeq;
   const mermaid = await getMermaid();
-  for (const block of blocks) {
+  if (currentSeq !== renderSeq) return;
+
+  // 1. Render explicit ```mermaid blocks
+  const explicitBlocks = root.querySelectorAll(".mermaid-block[data-code]");
+  for (const block of explicitBlocks) {
+    if (currentSeq !== renderSeq) break;
     const code = decodeURIComponent(block.dataset.code);
     try {
-      const id = `mmd-${++mermaidSeq}`;
+      const id = `mmd-${Date.now()}-${++mermaidSeq}`;
       const { svg } = await mermaid.render(id, code);
+      if (currentSeq !== renderSeq) break;
       block.innerHTML = svg;
     } catch (err) {
+      if (currentSeq !== renderSeq) break;
       block.innerHTML = `<div class="mermaid-error">Mermaid error: ${md.utils.escapeHtml(String(err?.message ?? err))}</div>`;
     }
+  }
+
+  // 2. Detect & validate unlabelled / text-labelled mermaid blocks via remark AST
+  const candidates = await detectCandidateMermaidBlocks(previewTarget.value);
+  if (!candidates.length || currentSeq !== renderSeq) return;
+
+  // Find all pre > code in preview that match candidate values
+  const preCodes = root.querySelectorAll("pre > code");
+  for (const codeEl of preCodes) {
+    if (currentSeq !== renderSeq) break;
+    const pre = codeEl.parentElement;
+    if (!pre || pre.classList.contains("mermaid-converted")) continue;
+
+    const rawCode = codeEl.textContent.replace(/\r\n/g, "\n").trim();
+    const candidate = candidates.find((c) => c.replace(/\r\n/g, "\n").trim() === rawCode);
+    if (!candidate) continue;
+
+    // Validate candidate with mermaid.parse(code, { suppressErrors: true })
+    try {
+      const isValid = await mermaid.parse(candidate, { suppressErrors: true });
+      if (!isValid || currentSeq !== renderSeq) continue;
+
+      const id = `mmd-${Date.now()}-${++mermaidSeq}`;
+      const { svg } = await mermaid.render(id, candidate);
+      if (currentSeq !== renderSeq) break;
+
+      const holder = document.createElement("div");
+      holder.className = "mermaid-block mermaid-converted";
+      holder.innerHTML = svg;
+      pre.replaceWith(holder);
+    } catch {}
   }
 }
 
@@ -337,7 +559,11 @@ const hasPrimaryModifier = (e) => e.ctrlKey || e.metaKey;
 
 function onKeydown(e) {
   if (e.key === "Escape") {
-    if (showAbout.value) {
+    if (tabContextMenu.value.show) {
+      closeTabContextMenu();
+    } else if (showSearch.value) {
+      closeSearch();
+    } else if (showAbout.value) {
       showAbout.value = false;
     } else if (showProps.value) {
       showProps.value = false;
@@ -346,7 +572,29 @@ function onKeydown(e) {
     }
     return;
   }
-  if (hasPrimaryModifier(e) && (e.key === "=" || e.key === "+")) {
+  if (hasPrimaryModifier(e) && e.key.toLowerCase() === "h") {
+    e.preventDefault();
+    openSearch(true);
+  } else if (hasPrimaryModifier(e) && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    openSearch();
+  } else if (hasPrimaryModifier(e) && e.key.toLowerCase() === "b") {
+    e.preventDefault();
+    toggleSidebar();
+  } else if (hasPrimaryModifier(e) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+    if (editing.value && !e.target.matches("input")) {
+      e.preventDefault();
+      undo();
+    }
+  } else if (
+    (hasPrimaryModifier(e) && e.key.toLowerCase() === "y") ||
+    (hasPrimaryModifier(e) && e.shiftKey && e.key.toLowerCase() === "z")
+  ) {
+    if (editing.value && !e.target.matches("input")) {
+      e.preventDefault();
+      redo();
+    }
+  } else if (hasPrimaryModifier(e) && (e.key === "=" || e.key === "+")) {
     e.preventDefault();
     zoomIn();
   } else if (hasPrimaryModifier(e) && e.key === "-") {
@@ -366,7 +614,9 @@ function onKeydown(e) {
     newTab();
   } else if (hasPrimaryModifier(e) && e.key.toLowerCase() === "w") {
     e.preventDefault();
-    closeTab(activeTabId.value);
+    if (activeTabId.value) {
+      closeTab(activeTabId.value);
+    }
   } else if (hasPrimaryModifier(e) && e.altKey && e.key === "ArrowRight") {
     e.preventDefault();
     cycleTab(1);
@@ -444,7 +694,7 @@ async function documentsDir() {
 
 /* ---------- tabs ops ---------- */
 
-function activateTab(id) {
+async function activateTab(id) {
   const tab = tabs.value.find((t) => t.id === id);
   if (!tab) return;
   activeTabId.value = id;
@@ -452,6 +702,8 @@ function activateTab(id) {
   try {
     localStorage.setItem("cm:content", tab.content);
   } catch {}
+  await nextTick();
+  await renderMermaidBlocks();
   showToast("Switched to " + tabLabel(tab));
 }
 
@@ -502,17 +754,66 @@ async function closeTab(id) {
   if (activeTabId.value === id) {
     const next = tabs.value[Math.max(0, idx - 1)];
     if (next) {
-      activateTab(next.id);
+      await activateTab(next.id);
     } else {
-      const fresh = makeTab(null, DEFAULT_MD);
-      tabs.value.push(fresh);
-      activateTab(fresh.id);
+      activeTabId.value = null;
+      previewTarget.value = "";
       editing.value = false;
     }
   }
 }
 
+async function closeOtherTabs(id) {
+  const target = tabs.value.find((t) => t.id === id);
+  if (!target) return;
+  const others = tabs.value.filter((t) => t.id !== id);
+  const dirtyOthers = others.filter((t) => t.dirty);
+  if (dirtyOthers.length > 0) {
+    const ok = await invoke("confirm_discard", {
+      message: `Discard unsaved changes in ${dirtyOthers.length} other tab(s)?`,
+    });
+    if (!ok) return;
+  }
+  tabs.value = [target];
+  await activateTab(target.id);
+}
+
+async function closeTabsToRight(id) {
+  const idx = tabs.value.findIndex((t) => t.id === id);
+  if (idx < 0 || idx >= tabs.value.length - 1) return;
+  const rights = tabs.value.slice(idx + 1);
+  const dirtyRights = rights.filter((t) => t.dirty);
+  if (dirtyRights.length > 0) {
+    const ok = await invoke("confirm_discard", {
+      message: `Discard unsaved changes in ${dirtyRights.length} tab(s) to the right?`,
+    });
+    if (!ok) return;
+  }
+  tabs.value = tabs.value.slice(0, idx + 1);
+  if (!tabs.value.some((t) => t.id === activeTabId.value)) {
+    await activateTab(id);
+  }
+}
+
+async function closeTabsToLeft(id) {
+  const idx = tabs.value.findIndex((t) => t.id === id);
+  if (idx <= 0) return;
+  const lefts = tabs.value.slice(0, idx);
+  const dirtyLefts = lefts.filter((t) => t.dirty);
+  if (dirtyLefts.length > 0) {
+    const ok = await invoke("confirm_discard", {
+      message: `Discard unsaved changes in ${dirtyLefts.length} tab(s) to the left?`,
+    });
+    if (!ok) return;
+  }
+  tabs.value = tabs.value.slice(idx);
+  if (!tabs.value.some((t) => t.id === activeTabId.value)) {
+    await activateTab(id);
+  }
+}
+
 async function saveFile() {
+  if (!activeTab.value) return;
   let path = currentPath.value;
   if (!path) {
     const dir = await documentsDir();
@@ -523,24 +824,25 @@ async function saveFile() {
     await invoke("save_file", { path, contents: content.value });
     currentPath.value = path;
     dirty.value = false;
-    showToast("Saved");
+    showToast("Saved: " + fileName.value);
   } catch (err) {
     showToast("Failed to save: " + err);
   }
 }
 
 async function saveFileAs() {
+  if (!activeTab.value) return;
   const dir = await documentsDir();
   const path = await invoke("show_save_dialog", {
     defaultDir: dir,
-    fileName: fileName.value,
+    fileName: fileName.value || "untitled.md",
   });
   if (!path) return;
   try {
     await invoke("save_file", { path, contents: content.value });
     currentPath.value = path;
     dirty.value = false;
-    showToast("Saved");
+    showToast("Saved as: " + fileName.value);
   } catch (err) {
     showToast("Failed to save: " + err);
   }
@@ -549,7 +851,7 @@ async function saveFileAs() {
 /* ---------- export PDF ---------- */
 
 async function exportPdf() {
-  exporting.value = true;
+  if (!activeTab.value || exporting.value) return;
   try {
     const baseName = fileName.value.replace(/\.(md|markdown|txt)$/i, "") || "document";
     const dir = await documentsDir();
@@ -641,6 +943,7 @@ watch(editing, async (val) => {
 });
 
 function toggleEdit() {
+  if (!activeTab.value) return;
   editing.value = !editing.value;
 }
 
@@ -735,6 +1038,7 @@ async function openBmc() {
 }
 
 async function openProperties() {
+  if (!activeTab.value) return;
   fileMeta.value = null;
   propsError.value = null;
   showProps.value = true;
@@ -863,6 +1167,329 @@ function onSplitKeydown(e) {
   }
 }
 
+/* ---------- sidebar / toc panel toggle & resize ---------- */
+
+const TOC_MIN_WIDTH = 160;
+const TOC_MAX_WIDTH = 500;
+const TOC_DEFAULT_WIDTH = 250;
+
+const showSidebar = ref(localStorage.getItem("cm:show-sidebar") !== "false");
+const sidebarWidth = ref(loadSidebarWidth());
+const isDraggingSidebar = ref(false);
+
+function loadSidebarWidth() {
+  const saved = Number(localStorage.getItem("cm:sidebar-width"));
+  return saved >= TOC_MIN_WIDTH && saved <= TOC_MAX_WIDTH ? saved : TOC_DEFAULT_WIDTH;
+}
+
+function setSidebarWidth(w) {
+  sidebarWidth.value = Math.min(
+    TOC_MAX_WIDTH,
+    Math.max(TOC_MIN_WIDTH, Math.round(w))
+  );
+}
+
+watch(showSidebar, (val) => {
+  localStorage.setItem("cm:show-sidebar", String(val));
+});
+
+watch(sidebarWidth, (val) => {
+  localStorage.setItem("cm:sidebar-width", String(val));
+});
+
+function toggleSidebar() {
+  showSidebar.value = !showSidebar.value;
+}
+
+function onSidebarPointerDown(e) {
+  e.preventDefault();
+  isDraggingSidebar.value = true;
+  e.currentTarget.setPointerCapture(e.pointerId);
+}
+
+function onSidebarPointerMove(e) {
+  if (!isDraggingSidebar.value) return;
+  const newW = window.innerWidth - e.clientX;
+  setSidebarWidth(newW);
+}
+
+function onSidebarPointerUp(e) {
+  if (!isDraggingSidebar.value) return;
+  isDraggingSidebar.value = false;
+  try {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  } catch {}
+}
+
+function resetSidebarWidth() {
+  sidebarWidth.value = TOC_DEFAULT_WIDTH;
+}
+
+function onSidebarKeydown(e) {
+  if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    setSidebarWidth(sidebarWidth.value + 15);
+  } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    setSidebarWidth(sidebarWidth.value - 15);
+  }
+}
+
+/* ---------- tab context menu ---------- */
+
+const tabContextMenu = ref({
+  show: false,
+  x: 0,
+  y: 0,
+  tabId: null,
+});
+
+function onTabContextMenu(tabId, e) {
+  e.preventDefault();
+  e.stopPropagation();
+  tabContextMenu.value = {
+    show: true,
+    x: e.clientX,
+    y: e.clientY,
+    tabId,
+  };
+}
+
+function closeTabContextMenu() {
+  tabContextMenu.value.show = false;
+}
+
+/* ---------- search & replace ---------- */
+
+const showSearch = ref(false);
+const searchQuery = ref("");
+const replaceQuery = ref("");
+const showReplace = ref(false);
+const searchCaseSensitive = ref(false);
+const searchIndex = ref(0);
+const searchTotal = ref(0);
+const searchInputRef = ref(null);
+const replaceInputRef = ref(null);
+const editorMatches = ref([]); // list of start indices in editor
+
+function openSearch(withReplace = false) {
+  showSearch.value = true;
+  if (withReplace && editing.value) {
+    showReplace.value = true;
+  }
+  nextTick(() => {
+    if (withReplace && showReplace.value) {
+      searchInputRef.value?.focus();
+      searchInputRef.value?.select();
+    } else {
+      searchInputRef.value?.focus();
+      searchInputRef.value?.select();
+    }
+    executeSearch();
+  });
+}
+
+function closeSearch() {
+  showSearch.value = false;
+  showReplace.value = false;
+  clearHighlights();
+  if (editing.value) {
+    editorRef.value?.focus();
+  }
+}
+
+function toggleSearch() {
+  if (showSearch.value) {
+    closeSearch();
+  } else {
+    openSearch();
+  }
+}
+
+function toggleReplace() {
+  if (!editing.value) return;
+  showReplace.value = !showReplace.value;
+  if (showReplace.value) {
+    nextTick(() => replaceInputRef.value?.focus());
+  }
+}
+
+function clearHighlights() {
+  searchIndex.value = 0;
+  searchTotal.value = 0;
+  editorMatches.value = [];
+  const root = previewRef.value;
+  if (!root) return;
+  const marks = root.querySelectorAll("mark.cm-search-match");
+  marks.forEach((m) => {
+    const parent = m.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parent.normalize();
+    }
+  });
+}
+
+function executeSearch() {
+  clearHighlights();
+  const q = searchQuery.value;
+  if (!q) return;
+
+  if (editing.value && editorRef.value) {
+    // Search in textarea
+    const text = content.value;
+    const flags = searchCaseSensitive.value ? "g" : "gi";
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, flags);
+    const matches = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      matches.push(match.index);
+    }
+    editorMatches.value = matches;
+    searchTotal.value = matches.length;
+    if (matches.length > 0) {
+      searchIndex.value = 1;
+      highlightEditorMatch(0);
+    }
+  } else if (previewRef.value) {
+    // Search in preview DOM
+    const root = previewRef.value;
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, searchCaseSensitive.value ? "g" : "gi");
+
+    // Walk text nodes
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        const parentTag = node.parentElement?.tagName;
+        if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "MARK") {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const nodes = [];
+    while (walker.nextNode()) {
+      nodes.push(walker.currentNode);
+    }
+
+    let count = 0;
+    nodes.forEach((node) => {
+      const text = node.nodeValue;
+      if (!regex.test(text)) return;
+      regex.lastIndex = 0;
+
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      let m;
+      while ((m = regex.exec(text)) !== null) {
+        if (m.index > lastIdx) {
+          frag.appendChild(document.createTextNode(text.slice(lastIdx, m.index)));
+        }
+        const mark = document.createElement("mark");
+        mark.className = "cm-search-match";
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        lastIdx = regex.lastIndex;
+        count++;
+      }
+      if (lastIdx < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      }
+      node.parentNode.replaceChild(frag, node);
+    });
+
+    searchTotal.value = count;
+    if (count > 0) {
+      searchIndex.value = 1;
+      highlightPreviewMatch(0);
+    }
+  }
+}
+
+function highlightEditorMatch(idx) {
+  const matches = editorMatches.value;
+  if (!matches.length || !editorRef.value) return;
+  const pos = matches[idx];
+  const qLen = searchQuery.value.length;
+  const textarea = editorRef.value;
+  textarea.focus();
+  textarea.setSelectionRange(pos, pos + qLen);
+
+  // Scroll textarea into view
+  const linesBefore = textarea.value.slice(0, pos).split("\n").length;
+  const totalLines = textarea.value.split("\n").length;
+  const scrollRatio = linesBefore / Math.max(1, totalLines);
+  textarea.scrollTop = scrollRatio * textarea.scrollHeight - textarea.clientHeight / 2;
+}
+
+function highlightPreviewMatch(idx) {
+  const root = previewRef.value;
+  if (!root) return;
+  const marks = root.querySelectorAll("mark.cm-search-match");
+  marks.forEach((m, i) => {
+    if (i === idx) {
+      m.classList.add("cm-current");
+      m.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      m.classList.remove("cm-current");
+    }
+  });
+}
+
+function findNext() {
+  if (searchTotal.value === 0) return;
+  let next = searchIndex.value + 1;
+  if (next > searchTotal.value) next = 1;
+  searchIndex.value = next;
+  if (editing.value) {
+    highlightEditorMatch(next - 1);
+  } else {
+    highlightPreviewMatch(next - 1);
+  }
+}
+
+function findPrev() {
+  if (searchTotal.value === 0) return;
+  let prev = searchIndex.value - 1;
+  if (prev < 1) prev = searchTotal.value;
+  searchIndex.value = prev;
+  if (editing.value) {
+    highlightEditorMatch(prev - 1);
+  } else {
+    highlightPreviewMatch(prev - 1);
+  }
+}
+
+function replaceCurrent() {
+  if (!editing.value || searchTotal.value === 0 || !editorMatches.value.length) return;
+  const currentIdx = Math.max(0, searchIndex.value - 1);
+  const pos = editorMatches.value[currentIdx];
+  const qLen = searchQuery.value.length;
+  const text = content.value;
+  const rep = replaceQuery.value;
+  content.value = text.slice(0, pos) + rep + text.slice(pos + qLen);
+  nextTick(() => {
+    executeSearch();
+  });
+}
+
+function replaceAll() {
+  if (!editing.value || searchTotal.value === 0) return;
+  const q = searchQuery.value;
+  if (!q) return;
+  const flags = searchCaseSensitive.value ? "g" : "gi";
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(escaped, flags);
+  content.value = content.value.replace(regex, replaceQuery.value);
+  nextTick(() => {
+    executeSearch();
+    showToast("Replaced matches");
+  });
+}
+
 /* ---------- custom tooltip directive ---------- */
 
 let tipEl = null;
@@ -950,17 +1577,17 @@ function isTauri() {
   return "__TAURI_INTERNALS__" in window;
 }
 
-function applyOpenedFile(payload) {
+async function applyOpenedFile(payload) {
   if (!payload || typeof payload.path !== "string") return;
   const existing = tabs.value.find((t) => t.path === payload.path);
   if (existing) {
     existing.content = payload.content;
     existing.dirty = false;
-    activateTab(existing.id);
+    await activateTab(existing.id);
   } else {
     const tab = makeTab(payload.path, payload.content);
     tabs.value.push(tab);
-    activateTab(tab.id);
+    await activateTab(tab.id);
   }
   currentPath.value = payload.path;
   dirty.value = false;
@@ -970,9 +1597,26 @@ function applyOpenedFile(payload) {
   showToast("Opened: " + payload.path.split(/[/\\]/).pop());
 }
 
+function onWindowContextMenu(e) {
+  // If right-clicked on an input or textarea, allow native cut/copy/paste
+  if (e.target.closest("input, textarea")) {
+    return;
+  }
+  // Otherwise disable default browser context menu (back, forward, reload, inspect)
+  e.preventDefault();
+}
+
+function onWindowClick(e) {
+  if (tabContextMenu.value.show) {
+    closeTabContextMenu();
+  }
+}
+
 onMounted(async () => {
   document.documentElement.dataset.theme = theme.value;
   window.addEventListener("keydown", onKeydown);
+  window.addEventListener("click", onWindowClick);
+  window.addEventListener("contextmenu", onWindowContextMenu);
   document.addEventListener("wheel", onWheel, { passive: false });
   document.addEventListener("scroll", hideTip, true);
   if (isTauri()) {
@@ -984,14 +1628,18 @@ onMounted(async () => {
     } catch {}
     setTimeout(() => checkForUpdates(true), 4000);
   }
-  toc.value = buildToc(previewTarget.value);
-  await nextTick();
-  await renderMermaidBlocks();
-  attachScrollspy();
+  if (previewTarget.value) {
+    toc.value = buildToc(previewTarget.value);
+    await nextTick();
+    await renderMermaidBlocks();
+    attachScrollspy();
+  }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("click", onWindowClick);
+  window.removeEventListener("contextmenu", onWindowContextMenu);
   document.removeEventListener("wheel", onWheel);
   document.removeEventListener("scroll", hideTip, true);
   observer?.disconnect();
@@ -1019,13 +1667,13 @@ onBeforeUnmount(() => {
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
           </svg>
         </button>
-        <button class="btn icon-btn" v-tooltip="'Save (Ctrl+S)'" :class="{ primary: dirty }" aria-label="Save" @click="saveFile">
+        <button class="btn icon-btn" :disabled="!activeTab" v-tooltip="'Save (Ctrl+S)'" :class="{ primary: dirty }" aria-label="Save" @click="saveFile">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
             <path d="M8 3v5h7V3" /><path d="M8 21v-7h8v7" />
           </svg>
         </button>
-        <button class="btn icon-btn" v-tooltip="'Save as new file'" aria-label="Save as" @click="saveFileAs">
+        <button class="btn icon-btn" :disabled="!activeTab" v-tooltip="'Save as new file'" aria-label="Save as" @click="saveFileAs">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
             <path d="M14 3v5h5" />
@@ -1035,7 +1683,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="toolbar-group">
-        <button class="btn icon-btn" :class="{ active: editing }" v-tooltip="editing ? 'Exit editor (Esc)' : 'Edit mode (Esc to exit)'" aria-label="Edit" @click="toggleEdit">
+        <button class="btn icon-btn" :disabled="!activeTab" :class="{ active: editing }" v-tooltip="editing ? 'Exit editor (Esc)' : 'Edit mode (Esc to exit)'" aria-label="Edit" @click="toggleEdit">
           <svg v-if="!editing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15.2 4.8l4 4L8 20H4v-4z" /><path d="M12.5 7.5l4 4" />
           </svg>
@@ -1043,24 +1691,44 @@ onBeforeUnmount(() => {
             <path d="M5 13l4 4L19 7" />
           </svg>
         </button>
-        <button class="btn icon-btn" :disabled="exporting" v-tooltip="'Export to PDF (save dialog, defaults to Documents folder)'" aria-label="Export PDF" @click="exportPdf">
+        <template v-if="editing">
+          <button class="btn icon-btn" :disabled="!canUndo" v-tooltip="'Undo (Ctrl+Z)'" aria-label="Undo" @click="undo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7v6h6" />
+              <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+            </svg>
+          </button>
+          <button class="btn icon-btn" :disabled="!canRedo" v-tooltip="'Redo (Ctrl+Y)'" aria-label="Redo" @click="redo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 7v6h-6" />
+              <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+            </svg>
+          </button>
+        </template>
+        <button class="btn icon-btn" :disabled="!activeTab || exporting" v-tooltip="'Export to PDF (save dialog, defaults to Documents folder)'" aria-label="Export PDF" @click="exportPdf">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
             <path d="M14 3v5h5" />
             <text x="9" y="17" font-size="5.5" font-weight="700" stroke="none" fill="currentColor">PDF</text>
           </svg>
         </button>
+        <button class="btn icon-btn" :disabled="!activeTab" :class="{ active: showSearch }" v-tooltip="'Find in document (Ctrl+F)'" aria-label="Find" @click="toggleSearch">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+        </button>
       </div>
 
       <div class="toolbar-group zoom">
-        <button class="btn icon-btn" :disabled="!canZoomOut" v-tooltip="'Zoom out (Ctrl+−)'" aria-label="Zoom out" @click="zoomOut">
+        <button class="btn icon-btn" :disabled="!activeTab || !canZoomOut" v-tooltip="'Zoom out (Ctrl+−)'" aria-label="Zoom out" @click="zoomOut">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14" /></svg>
         </button>
-        <button class="btn zoom-label" v-tooltip="'Reset zoom (Ctrl+0)'" aria-label="Zoom level, click to reset" @click="zoomReset">{{ zoomPercent }}</button>
-        <button class="btn icon-btn" :disabled="!canZoomIn" v-tooltip="'Zoom in (Ctrl++)'" aria-label="Zoom in" @click="zoomIn">
+        <button class="btn zoom-label" :disabled="!activeTab" v-tooltip="'Reset zoom (Ctrl+0)'" aria-label="Zoom level, click to reset" @click="zoomReset">{{ zoomPercent }}</button>
+        <button class="btn icon-btn" :disabled="!activeTab || !canZoomIn" v-tooltip="'Zoom in (Ctrl++)'" aria-label="Zoom in" @click="zoomIn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
         </button>
-        <button class="btn icon-btn" v-tooltip="'File properties'" aria-label="File properties" @click="openProperties">
+        <button class="btn icon-btn" :disabled="!activeTab" v-tooltip="'File properties'" aria-label="File properties" @click="openProperties">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9" />
             <path d="M12 11v5" /><circle cx="12" cy="7.6" r="0.4" fill="currentColor" stroke="none" />
@@ -1103,6 +1771,19 @@ onBeforeUnmount(() => {
 
       <button
         class="btn icon-btn"
+        :class="{ active: showSidebar }"
+        v-tooltip="showSidebar ? 'Hide outline (Ctrl+B)' : 'Show outline (Ctrl+B)'"
+        aria-label="Toggle outline"
+        @click="toggleSidebar"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M15 3v18" />
+        </svg>
+      </button>
+
+      <button
+        class="btn icon-btn"
         v-tooltip="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
         :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
         @click="theme = theme === 'dark' ? 'light' : 'dark'"
@@ -1124,7 +1805,7 @@ onBeforeUnmount(() => {
       </button>
     </header>
 
-    <div class="tabstrip" role="tablist" aria-label="Open files">
+    <div v-if="tabs.length" class="tabstrip" role="tablist" aria-label="Open files">
       <div
         v-for="tab in tabs"
         :key="tab.id"
@@ -1136,6 +1817,7 @@ onBeforeUnmount(() => {
         tabindex="0"
         @click="activateTab(tab.id)"
         @auxclick="onTabAuxClick(tab.id, $event)"
+        @contextmenu="onTabContextMenu(tab.id, $event)"
         @keydown.enter="activateTab(tab.id)"
         v-tooltip="tab.path || tabLabel(tab)"
       >
@@ -1158,60 +1840,242 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <main class="workspace" :class="{ 'split-dragging': isDraggingSplit }">
-      <div ref="splitAreaRef" class="split-area">
-        <textarea
-          v-if="editing"
-          ref="editorRef"
-          v-model="content"
-          class="editor"
-          :style="editorStyle"
-          spellcheck="false"
-          placeholder="Write markdown here…"
-          @keydown="onEditorKeydown"
-        ></textarea>
+    <main
+      class="workspace"
+      :class="{
+        'split-dragging': isDraggingSplit || isDraggingSidebar,
+        'has-search': showSearch
+      }"
+    >
+      <div v-if="showSearch" class="search-panel">
+        <div class="search-row">
+          <button
+            v-if="editing"
+            class="btn icon-btn search-toggle-btn"
+            :class="{ active: showReplace }"
+            v-tooltip="showReplace ? 'Hide replace' : 'Toggle replace (Ctrl+H)'"
+            aria-label="Toggle replace"
+            @click="toggleReplace"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+
+          <div class="search-input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              ref="searchInputRef"
+              v-model="searchQuery"
+              type="text"
+              class="search-input"
+              placeholder="Find in document…"
+              @input="executeSearch"
+              @keydown.enter.exact="findNext"
+              @keydown.shift.enter.exact="findPrev"
+              @keydown.esc="closeSearch"
+            />
+          </div>
+
+          <div class="search-counter">
+            {{ searchTotal > 0 ? `${searchIndex} of ${searchTotal}` : (searchQuery ? '0 matches' : '') }}
+          </div>
+
+          <button
+            class="btn icon-btn search-opt-btn"
+            :class="{ active: searchCaseSensitive }"
+            v-tooltip="'Match case'"
+            aria-label="Match case"
+            @click="searchCaseSensitive = !searchCaseSensitive; executeSearch()"
+          >
+            Aa
+          </button>
+
+          <button
+            class="btn icon-btn"
+            :disabled="searchTotal === 0"
+            v-tooltip="'Previous match (Shift+Enter)'"
+            aria-label="Previous match"
+            @click="findPrev"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+          </button>
+
+          <button
+            class="btn icon-btn"
+            :disabled="searchTotal === 0"
+            v-tooltip="'Next match (Enter)'"
+            aria-label="Next match"
+            @click="findNext"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+
+          <button
+            class="btn icon-btn"
+            v-tooltip="'Close (Esc)'"
+            aria-label="Close find"
+            @click="closeSearch"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+
+        <!-- Replace row in Editor mode -->
+        <div v-if="editing && showReplace" class="search-row replace-row">
+          <div class="search-input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 3v4a2 2 0 0 1-2 2H5" /><path d="M9 13l-4-4 4-4" />
+              <path d="M7 21v-4a2 2 0 0 1 2-2h10" /><path d="M15 11l4 4-4 4" />
+            </svg>
+            <input
+              ref="replaceInputRef"
+              v-model="replaceQuery"
+              type="text"
+              class="search-input"
+              placeholder="Replace with…"
+              @keydown.enter.exact="replaceCurrent"
+              @keydown.esc="closeSearch"
+            />
+          </div>
+
+          <button
+            class="btn search-action-btn"
+            :disabled="searchTotal === 0"
+            v-tooltip="'Replace current match'"
+            @click="replaceCurrent"
+          >
+            Replace
+          </button>
+
+          <button
+            class="btn search-action-btn"
+            :disabled="searchTotal === 0"
+            v-tooltip="'Replace all matches'"
+            @click="replaceAll"
+          >
+            Replace all
+          </button>
+        </div>
+      </div>
+
+      <!-- Empty state when no tabs are open -->
+      <div v-if="!activeTab" class="empty-workspace">
+        <div class="empty-card">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="4" />
+            <path d="M7 15V9l3 3.5L13 9v6" />
+            <path d="M17 9v6" />
+            <path d="M15 13.5l2 2 2-2" />
+          </svg>
+          <div class="empty-title">Chill Markdown</div>
+          <div class="empty-sub">No files open. Create a new document or open an existing markdown file to get started.</div>
+          <div class="empty-actions">
+            <button class="btn primary empty-btn" @click="newTab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              <span>New Document</span>
+            </button>
+            <button class="btn empty-btn" @click="openFile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              </svg>
+              <span>Open File…</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <template v-else>
+        <div ref="splitAreaRef" class="split-area">
+          <textarea
+            v-if="editing"
+            ref="editorRef"
+            v-model="content"
+            class="editor"
+            :style="editorStyle"
+            spellcheck="false"
+            placeholder="Write markdown here…"
+            @keydown="onEditorKeydown"
+          ></textarea>
+          <div
+            v-if="editing"
+            class="split-divider"
+            :class="{ active: isDraggingSplit }"
+            role="separator"
+            aria-orientation="vertical"
+            :aria-valuenow="Math.round(splitRatio * 100)"
+            aria-label="Editor split size — drag, use Left/Right arrows, or double-click to reset"
+            v-tooltip="'Drag to resize the editor pane'"
+            tabindex="0"
+            @pointerdown="onSplitPointerDown"
+            @pointermove="onSplitPointerMove"
+            @pointerup="onSplitPointerUp"
+            @pointercancel="onSplitPointerUp"
+            @dblclick="resetSplit"
+            @keydown="onSplitKeydown"
+          ></div>
+          <div
+            ref="previewRef"
+            class="md-content md-preview"
+            :style="{ fontSize: 16 * zoom + 'px' }"
+            v-html="previewHtml"
+            @click="onPreviewClick"
+          ></div>
+        </div>
+
+        <!-- Resizable Sidebar TOC Divider -->
         <div
-          v-if="editing"
-          class="split-divider"
-          :class="{ active: isDraggingSplit }"
+          v-if="showSidebar"
+          class="sidebar-divider"
+          :class="{ active: isDraggingSidebar }"
           role="separator"
           aria-orientation="vertical"
-          :aria-valuenow="Math.round(splitRatio * 100)"
-          aria-label="Editor split size — drag, use Left/Right arrows, or double-click to reset"
-          v-tooltip="'Drag to resize the editor pane'"
+          :aria-valuenow="sidebarWidth"
+          aria-label="Sidebar outline size — drag or double-click to reset"
+          v-tooltip="'Drag to resize outline sidebar'"
           tabindex="0"
-          @pointerdown="onSplitPointerDown"
-          @pointermove="onSplitPointerMove"
-          @pointerup="onSplitPointerUp"
-          @pointercancel="onSplitPointerUp"
-          @dblclick="resetSplit"
-          @keydown="onSplitKeydown"
+          @pointerdown="onSidebarPointerDown"
+          @pointermove="onSidebarPointerMove"
+          @pointerup="onSidebarPointerUp"
+          @pointercancel="onSidebarPointerUp"
+          @dblclick="resetSidebarWidth"
+          @keydown="onSidebarKeydown"
         ></div>
-        <div
-          ref="previewRef"
-          class="md-content md-preview"
-          :style="{ fontSize: 16 * zoom + 'px' }"
-          v-html="previewHtml"
-          @click="onPreviewClick"
-        ></div>
-      </div>
-      <aside class="toc">
-        <div class="toc-title">Contents</div>
-        <nav class="toc-list">
-          <template v-if="toc.length">
-            <a
-              v-for="item in toc"
-              :key="item.id"
-              :class="['toc-item', `lvl-${item.level}`, { active: activeId === item.id }]"
-              :href="`#${item.id}`"
-              @click.prevent="scrollToHeading(item.id)"
+
+        <aside
+          v-if="showSidebar"
+          class="toc"
+          :style="{ width: sidebarWidth + 'px' }"
+        >
+          <div class="toc-header">
+            <div class="toc-title">Contents</div>
+            <button
+              class="btn icon-btn toc-close-btn"
+              v-tooltip="'Hide outline (Ctrl+B)'"
+              aria-label="Hide outline"
+              @click="toggleSidebar"
             >
-              {{ item.text }}
-            </a>
-          </template>
-          <div v-else class="toc-empty">No headings yet</div>
-        </nav>
-      </aside>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <nav class="toc-list">
+            <template v-if="toc.length">
+              <a
+                v-for="item in toc"
+                :key="item.id"
+                :class="['toc-item', `lvl-${item.level}`, { active: activeId === item.id }]"
+                :href="`#${item.id}`"
+                @click.prevent="scrollToHeading(item.id)"
+              >
+                {{ item.text }}
+              </a>
+            </template>
+            <div v-else class="toc-empty">No headings yet</div>
+          </nav>
+        </aside>
+      </template>
     </main>
 
     <transition name="modal">
@@ -1315,7 +2179,9 @@ onBeforeUnmount(() => {
               </li>
               <li class="about-meta">
                 <span class="about-meta-item">License: Apache-2.0</span>
-                <span class="about-meta-item">Shortcut: Ctrl/Cmd + U</span>
+                <span class="about-meta-item">Find: Ctrl/Cmd + F</span>
+                <span class="about-meta-item">Toggle outline: Ctrl/Cmd + B</span>
+                <span class="about-meta-item">Undo/Redo: Ctrl/Cmd + Z / Y</span>
               </li>
             </ul>
           </div>
@@ -1329,6 +2195,27 @@ onBeforeUnmount(() => {
     <transition name="toast">
       <div v-if="toast" class="toast">{{ toast }}</div>
     </transition>
+
+    <!-- Tab Context Menu -->
+    <div
+      v-if="tabContextMenu.show"
+      class="context-menu"
+      :style="{ top: tabContextMenu.y + 'px', left: tabContextMenu.x + 'px' }"
+      @click.stop
+    >
+      <button class="context-item" @click="closeTab(tabContextMenu.tabId); closeTabContextMenu()">
+        Close tab
+      </button>
+      <button class="context-item" @click="closeOtherTabs(tabContextMenu.tabId); closeTabContextMenu()">
+        Close other tabs
+      </button>
+      <button class="context-item" @click="closeTabsToRight(tabContextMenu.tabId); closeTabContextMenu()">
+        Close tabs to the right
+      </button>
+      <button class="context-item" @click="closeTabsToLeft(tabContextMenu.tabId); closeTabContextMenu()">
+        Close tabs to the left
+      </button>
+    </div>
   </div>
 </template>
 
@@ -1514,6 +2401,66 @@ body {
   min-height: 0;
 }
 
+/* ---------- empty workspace state ---------- */
+
+.empty-workspace {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: var(--bg);
+}
+
+.empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 440px;
+}
+
+.empty-icon {
+  width: 56px;
+  height: 56px;
+  color: var(--accent);
+  margin-bottom: 16px;
+  opacity: 0.9;
+}
+
+.empty-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
+
+.empty-sub {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg-soft);
+  margin-bottom: 24px;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.empty-btn {
+  padding: 8px 18px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.empty-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ---------- tab strip ---------- */
 
 .tabstrip {
@@ -1628,7 +2575,8 @@ body {
   pointer-events: none;
 }
 
-.split-divider {
+.split-divider,
+.sidebar-divider {
   flex: none;
   width: 5px;
   margin: 4px 2px;
@@ -1641,11 +2589,14 @@ body {
 }
 
 .split-divider:hover,
-.split-divider.active {
+.split-divider.active,
+.sidebar-divider:hover,
+.sidebar-divider.active {
   background: var(--accent);
 }
 
-.split-divider:focus-visible {
+.split-divider:focus-visible,
+.sidebar-divider:focus-visible {
   box-shadow: inset 0 0 0 2px var(--panel), inset 0 0 0 4px var(--accent);
 }
 
@@ -1927,15 +2878,137 @@ html[data-theme="dark"] .md-content .hljs-property {
   color: #e08a8a;
 }
 
+/* ---------- search bar & search match highlight ---------- */
+
+.workspace {
+  position: relative;
+}
+
+.search-panel {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-toggle-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  transition: transform 0.15s;
+}
+
+.search-toggle-btn.active svg {
+  transform: rotate(90deg);
+}
+
+.search-action-btn {
+  padding: 3px 8px;
+  font-size: 12px;
+  height: 26px;
+  white-space: nowrap;
+}
+
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.search-input-wrap svg {
+  width: 14px;
+  height: 14px;
+  color: var(--fg-soft);
+  flex: none;
+}
+
+.search-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--fg);
+  font-size: 13px;
+  width: 160px;
+}
+
+.search-counter {
+  font-size: 11px;
+  color: var(--fg-soft);
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.search-opt-btn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 6px;
+  min-width: 26px;
+  height: 26px;
+}
+
+.search-opt-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+mark.cm-search-match {
+  background: #fde047;
+  color: #000;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark.cm-search-match.cm-current {
+  background: #f97316;
+  color: #fff;
+  outline: 2px solid #ea580c;
+}
+
+html[data-theme="dark"] mark.cm-search-match {
+  background: #a16207;
+  color: #fef08a;
+}
+
+html[data-theme="dark"] mark.cm-search-match.cm-current {
+  background: #ea580c;
+  color: #fff;
+}
+
 /* ---------- toc panel (kanan) ---------- */
 
 .toc {
-  width: 250px;
   flex: none;
   background: var(--panel);
   border-left: 1px solid var(--border);
   overflow-y: auto;
-  padding: 14px 0 24px;
+  padding: 10px 0 24px;
+}
+
+.toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px 10px 16px;
 }
 
 .toc-title {
@@ -1944,7 +3017,18 @@ html[data-theme="dark"] .md-content .hljs-property {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg-soft);
-  padding: 0 16px 10px;
+  padding: 0;
+}
+
+.toc-close-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.toc-close-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .toc-list {
@@ -2256,6 +3340,39 @@ html[data-theme="dark"] .md-content .hljs-property {
   opacity: 0;
   transform: translateX(-50%) translateY(8px);
 }
+
+/* ---------- tab context menu ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 170px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+}
+
+.context-item {
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.context-item:hover {
+  background: var(--panel-alt);
+  color: var(--accent);
+}
+
 /* kaitkan dark theme ke html dataset */
 html[data-theme="dark"] body {
   background: var(--bg);

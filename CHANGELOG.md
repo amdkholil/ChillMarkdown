@@ -5,6 +5,22 @@ Semua perubahan penting pada project ini didokumentasikan di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-11-05
+
+### Added
+
+- **Auto-detect Diagram Mermaid Tanpa Label**: Deteksi otomatis diagram Mermaid pada fenced code block yang tidak memiliki label bahasa atau berlabel `text` via AST remark (`remark` + `unist-util-visit`) & validasi `mermaid.parse(..., { suppressErrors: true })`.
+- **Fitur Find & Replace**: Panel pencarian dan penggantian teks di editor (`Ctrl/Cmd + H` atau via search panel) lengkap dengan opsi Replace & Replace all, Match case, counter kecocokan, dan navigasi Enter/Shift+Enter.
+- **Pencarian Dokumen**: Find in document di viewer dan editor (`Ctrl/Cmd + F`).
+- **Sidebar Outline Resizable & Collapsible**: Sidebar outline (TOC) kini dapat digeser ukurannya (drag divider) dan disembunyikan/ditampilkan (`Ctrl/Cmd + B` atau tombol toolbar).
+- **Undo & Redo di Editor**: Fitur Undo (`Ctrl/Cmd + Z`) dan Redo (`Ctrl/Cmd + Y` / `Ctrl/Cmd + Shift + Z`) per-tab dengan tombol toolbar yang responsif.
+- **Context Menu Tab**: Klik kanan pada tab menyediakan opsi *Close tab*, *Close other tabs*, *Close tabs to the right*, dan *Close tabs to the left*.
+- **Empty State Workspace**: Tampilan selamat datang dengan tombol *New Document* dan *Open File…* saat seluruh tab ditutup atau tidak ada file yang terbuka.
+
+### Changed
+
+- Nonaktifkan context menu default browser (Back, Forward, Reload, Inspect Element) agar antarmuka desktop lebih bersih, dengan tetap mempertahankan aksi edit native pada input teks dan textarea editor.
+
 ## [1.2.0] - 2026-10-23
 
 ### Added
