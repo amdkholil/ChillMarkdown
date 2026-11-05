@@ -5,6 +5,26 @@ Semua perubahan penting pada project ini didokumentasikan di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 dan project menggunakan [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-05
+
+### Added
+
+- **Progress Bar & Modal Sukses Export PDF**: Menampilkan modal progress visual seketika saat proses ekspor PDF berjalan (15% → 35% → 55% → 85% → 100%) dan dialog popup sukses dengan opsi **Buka File** (default PDF viewer OS) dan **Buka Folder** (`show_in_folder`).
+- **Command Native Pembuka File Lintas OS**: Command Rust `open_system_path` dan `show_in_folder` untuk menangani pembukaan file/folder lokal dengan aman di Linux, Windows, dan macOS.
+
+### Changed
+
+- Posisi section panel pencarian dipindahkan ke tengah atas workspace.
+- Default ukuran font dokumen Markdown dan editor diatur ke 12px.
+- Diagram Mermaid diatur rata kiri (*left-aligned*) dengan ukuran font teks 11px proporsional.
+
+### Fixed
+
+- **Fokus Kursor Pencarian**: Kursor input search tidak lagi berpindah otomatis ke editor saat mengetik huruf pertama di mode editor.
+- **Akurasi Jumlah Pencarian**: Memperbaiki false positive hitungan kata pada TreeWalker dengan mengecualikan node teks SVG internal Mermaid dan KaTeX MathML.
+- **Skala Diagram Git Graph & Pie Chart**: Mencegah diagram ber-viewBox kecil meregang raksasa ke lebar penuh dengan mengunci lebar alami via post-processing SVG dan konfigurasi Mermaid `useMaxWidth: false`.
+- **Styling Tombol Modal Export**: Memperbaiki tombol "Buka File" dan "Tutup" agar proporsional dan tidak mengalami teks hilang saat di-hover.
+
 ## [1.3.0] - 2026-11-05
 
 ### Added

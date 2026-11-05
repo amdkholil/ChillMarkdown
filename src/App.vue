@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import * as katexPluginModule from "@vscode/markdown-it-katex";
@@ -177,6 +177,13 @@ const theme = ref(localStorage.getItem("cm:theme") ?? (matchMedia("(prefers-colo
 const zoom = ref(Number(localStorage.getItem("cm:zoom")) || 1);
 const editing = ref(false);
 const exporting = ref(false);
+const exportProgress = ref("");
+const exportPercent = ref(0);
+const exportResultModal = ref({
+  show: false,
+  path: "",
+  fileName: "",
+});
 const previewTarget = ref("");
 const activeId = ref(null);
 const toast = ref(null);
@@ -301,7 +308,32 @@ async function getMermaid() {
   const lib = mermaidCache.default;
   const wantTheme = theme.value === "dark" ? "dark" : "default";
   if (mermaidThemeInitialized !== wantTheme) {
-    lib.initialize({ startOnLoad: false, theme: wantTheme, securityLevel: "loose" });
+    lib.initialize({
+      startOnLoad: false,
+      theme: wantTheme,
+      securityLevel: "loose",
+      fontSize: 11,
+      flowchart: { useMaxWidth: false },
+      sequence: { useMaxWidth: false },
+      gantt: { useMaxWidth: false },
+      journey: { useMaxWidth: false },
+      class: { useMaxWidth: false },
+      state: { useMaxWidth: false },
+      er: { useMaxWidth: false },
+      pie: { useMaxWidth: false },
+      gitGraph: {
+        useMaxWidth: false,
+        themeVariables: {
+          git0: "#4c7dd1",
+          gitBranchLabelFontSize: "11px",
+          gitCommitLabelFontSize: "10px",
+          gitTagLabelFontSize: "10px",
+        },
+      },
+      themeVariables: {
+        fontSize: "11px",
+      },
+    });
     mermaidThemeInitialized = wantTheme;
   }
   return lib;
@@ -417,6 +449,30 @@ async function detectCandidateMermaidBlocks(markdownText) {
   return candidates;
 }
 
+function postProcessMermaidSvg(blockEl) {
+  const svg = blockEl.querySelector("svg");
+  if (!svg) return;
+  svg.style.maxWidth = "100%";
+  svg.style.height = "auto";
+  const vb = svg.getAttribute("viewBox");
+  if (vb) {
+    const parts = vb.split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && parts[2] > 0) {
+      const vbWidth = parts[2];
+      // Jika pie chart atau diagram pie
+      if (svg.classList.contains("pieCircle") || svg.querySelector(".pieCircle, .legend, .pieTitleText")) {
+        const scaledWidth = Math.min(vbWidth * 0.7, 450);
+        svg.style.width = `${Math.round(scaledWidth)}px`;
+      } else if (svg.classList.contains("gitgraph") || svg.querySelector(".commit, .branch")) {
+        const scaledWidth = Math.min(vbWidth * 0.75, 550);
+        svg.style.width = `${Math.round(scaledWidth)}px`;
+      } else {
+        svg.style.width = `${Math.round(vbWidth)}px`;
+      }
+    }
+  }
+}
+
 async function renderMermaidBlocks() {
   const root = previewRef.value;
   if (!root) return;
@@ -434,6 +490,7 @@ async function renderMermaidBlocks() {
       const { svg } = await mermaid.render(id, code);
       if (currentSeq !== renderSeq) break;
       block.innerHTML = svg;
+      postProcessMermaidSvg(block);
     } catch (err) {
       if (currentSeq !== renderSeq) break;
       block.innerHTML = `<div class="mermaid-error">Mermaid error: ${md.utils.escapeHtml(String(err?.message ?? err))}</div>`;
@@ -468,6 +525,7 @@ async function renderMermaidBlocks() {
       holder.className = "mermaid-block mermaid-converted";
       holder.innerHTML = svg;
       pre.replaceWith(holder);
+      postProcessMermaidSvg(holder);
     } catch {}
   }
 }
@@ -559,7 +617,9 @@ const hasPrimaryModifier = (e) => e.ctrlKey || e.metaKey;
 
 function onKeydown(e) {
   if (e.key === "Escape") {
-    if (tabContextMenu.value.show) {
+    if (exportResultModal.value.show) {
+      exportResultModal.value.show = false;
+    } else if (tabContextMenu.value.show) {
       closeTabContextMenu();
     } else if (showSearch.value) {
       closeSearch();
@@ -860,7 +920,13 @@ async function exportPdf() {
       fileName: `${baseName}.pdf`,
     });
     if (!path) return;
+
+    // Tampilkan modal progress seketika
+    exporting.value = true;
+    exportPercent.value = 15;
+    exportProgress.value = "Menyiapkan elemen dokumen…";
     await nextTick();
+    await new Promise((r) => setTimeout(r, 60));
 
     const holder = document.createElement("div");
     holder.className = "md-content print-flow";
@@ -884,24 +950,39 @@ async function exportPdf() {
 
     holder.innerHTML = previewRef.value.innerHTML;
 
-    // Pastikan SVG (seperti Mermaid) memiliki dimensi fisik yang terukur
+    // Pastikan SVG (seperti Mermaid) memiliki dimensi fisik yang terukur dan font 11px
     const originalSvgs = previewRef.value.querySelectorAll("svg");
     const clonedSvgs = holder.querySelectorAll("svg");
     clonedSvgs.forEach((svg, idx) => {
       const orig = originalSvgs[idx];
       if (orig) {
         const rect = orig.getBoundingClientRect();
-        if (rect.width > 0 && !svg.getAttribute("width")) {
+        if (rect.width > 0) {
+          svg.style.width = `${Math.round(rect.width)}px`;
           svg.setAttribute("width", String(Math.round(rect.width)));
         }
-        if (rect.height > 0 && !svg.getAttribute("height")) {
+        if (rect.height > 0) {
+          svg.style.height = `${Math.round(rect.height)}px`;
           svg.setAttribute("height", String(Math.round(rect.height)));
         }
+      }
+      if (svg.closest(".mermaid-block")) {
+        svg.style.maxWidth = "100%";
+        svg.style.fontSize = "11px";
+        svg.querySelectorAll("text, .label text, .node text").forEach((t) => {
+          t.style.fontSize = "11px";
+        });
       }
     });
 
     document.body.appendChild(holder);
+    exportPercent.value = 35;
+    exportProgress.value = "Memproses tata letak halaman…";
+    await new Promise((r) => setTimeout(r, 60));
+
     try {
+      exportPercent.value = 55;
+      exportProgress.value = "Merender halaman PDF…";
       const html2pdf = (await import("html2pdf.js/dist/html2pdf.js")).default;
       const opt = {
         margin: [15, 15, 15, 15],
@@ -915,9 +996,21 @@ async function exportPdf() {
         pagebreak: { mode: ["css", "legacy"] },
       };
       const blob = await html2pdf().set(opt).from(holder).outputPdf("blob");
+      exportPercent.value = 85;
+      exportProgress.value = "Menyimpan file PDF…";
       const buf = new Uint8Array(await blob.arrayBuffer());
       await invoke("save_file_bytes", { path, bytes: Array.from(buf) });
-      showToast("PDF saved: " + path.split(/[/\\]/).pop());
+      
+      exportPercent.value = 100;
+      exportProgress.value = "Selesai!";
+      await new Promise((r) => setTimeout(r, 80));
+
+      const savedName = path.split(/[/\\]/).pop();
+      exportResultModal.value = {
+        show: true,
+        path,
+        fileName: savedName,
+      };
     } finally {
       holder.remove();
     }
@@ -925,6 +1018,36 @@ async function exportPdf() {
     showToast("Failed to export PDF: " + err);
   } finally {
     exporting.value = false;
+    exportProgress.value = "";
+    exportPercent.value = 0;
+  }
+}
+
+async function openExportedPdf() {
+  const p = exportResultModal.value.path;
+  if (!p) return;
+  try {
+    if (isTauri()) {
+      await invoke("open_system_path", { path: p });
+    } else {
+      await openPath(p);
+    }
+  } catch (err) {
+    showToast("Failed to open file: " + err);
+  }
+}
+
+async function showExportedInFolder() {
+  const p = exportResultModal.value.path;
+  if (!p) return;
+  try {
+    if (isTauri()) {
+      await invoke("show_in_folder", { path: p });
+    } else {
+      await openPath(p);
+    }
+  } catch (err) {
+    showToast("Failed to open folder: " + err);
   }
 }
 
@@ -1280,14 +1403,9 @@ function openSearch(withReplace = false) {
     showReplace.value = true;
   }
   nextTick(() => {
-    if (withReplace && showReplace.value) {
-      searchInputRef.value?.focus();
-      searchInputRef.value?.select();
-    } else {
-      searchInputRef.value?.focus();
-      searchInputRef.value?.select();
-    }
-    executeSearch();
+    searchInputRef.value?.focus();
+    searchInputRef.value?.select();
+    executeSearch(false);
   });
 }
 
@@ -1330,9 +1448,11 @@ function clearHighlights() {
       parent.normalize();
     }
   });
+  // Also clean up any lingering text nodes normalization in root
+  root.normalize();
 }
 
-function executeSearch() {
+function executeSearch(focusMatch = false) {
   clearHighlights();
   const q = searchQuery.value;
   if (!q) return;
@@ -1352,7 +1472,7 @@ function executeSearch() {
     searchTotal.value = matches.length;
     if (matches.length > 0) {
       searchIndex.value = 1;
-      highlightEditorMatch(0);
+      highlightEditorMatch(0, focusMatch);
     }
   } else if (previewRef.value) {
     // Search in preview DOM
@@ -1365,7 +1485,16 @@ function executeSearch() {
       acceptNode(node) {
         if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
         const parentTag = node.parentElement?.tagName;
-        if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "MARK") {
+        if (
+          parentTag === "SCRIPT" ||
+          parentTag === "STYLE" ||
+          parentTag === "MARK" ||
+          parentTag === "NOSCRIPT"
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        // Exclude SVG elements (like Mermaid rendered SVGs containing internal text/labels/classes)
+        if (node.parentElement?.closest("svg, .katex-mathml")) {
           return NodeFilter.FILTER_REJECT;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -1411,13 +1540,15 @@ function executeSearch() {
   }
 }
 
-function highlightEditorMatch(idx) {
+function highlightEditorMatch(idx, shouldFocus = true) {
   const matches = editorMatches.value;
   if (!matches.length || !editorRef.value) return;
   const pos = matches[idx];
   const qLen = searchQuery.value.length;
   const textarea = editorRef.value;
-  textarea.focus();
+  if (shouldFocus) {
+    textarea.focus();
+  }
   textarea.setSelectionRange(pos, pos + qLen);
 
   // Scroll textarea into view
@@ -1874,7 +2005,7 @@ onBeforeUnmount(() => {
               type="text"
               class="search-input"
               placeholder="Find in document…"
-              @input="executeSearch"
+              @input="executeSearch(false)"
               @keydown.enter.exact="findNext"
               @keydown.shift.enter.exact="findPrev"
               @keydown.esc="closeSearch"
@@ -1890,7 +2021,7 @@ onBeforeUnmount(() => {
             :class="{ active: searchCaseSensitive }"
             v-tooltip="'Match case'"
             aria-label="Match case"
-            @click="searchCaseSensitive = !searchCaseSensitive; executeSearch()"
+            @click="searchCaseSensitive = !searchCaseSensitive; executeSearch(false)"
           >
             Aa
           </button>
@@ -1996,7 +2127,7 @@ onBeforeUnmount(() => {
             ref="editorRef"
             v-model="content"
             class="editor"
-            :style="editorStyle"
+            :style="[editorStyle, { fontSize: 12 * zoom + 'px' }]"
             spellcheck="false"
             placeholder="Write markdown here…"
             @keydown="onEditorKeydown"
@@ -2021,7 +2152,7 @@ onBeforeUnmount(() => {
           <div
             ref="previewRef"
             class="md-content md-preview"
-            :style="{ fontSize: 16 * zoom + 'px' }"
+            :style="{ fontSize: 12 * zoom + 'px' }"
             v-html="previewHtml"
             @click="onPreviewClick"
           ></div>
@@ -2194,6 +2325,69 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
+    <!-- PDF Export Progress Modal -->
+    <transition name="modal">
+      <div v-if="exporting" class="modal-backdrop">
+        <div class="modal export-modal" role="dialog" aria-label="Exporting PDF">
+          <div class="export-spinner-wrap">
+            <svg class="export-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <circle cx="12" cy="12" r="9" stroke-dasharray="36" stroke-dashoffset="18" />
+            </svg>
+            <div class="export-modal-title">Mengekspor ke PDF</div>
+            <div class="export-modal-desc">{{ exportProgress || "Memproses dokumen…" }}</div>
+            <div class="export-bar-track">
+              <div class="export-bar-fill" :style="{ width: exportPercent + '%' }"></div>
+            </div>
+            <div class="export-percent-label">{{ exportPercent }}%</div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- PDF Export Success Modal -->
+    <transition name="modal">
+      <div v-if="exportResultModal.show" class="modal-backdrop" @click.self="exportResultModal.show = false">
+        <div class="modal export-modal" role="dialog" aria-label="PDF Exported Successfully">
+          <header class="modal-head">
+            <div class="modal-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M8.5 12.5l2.5 2.5 5-5" />
+              </svg>
+              PDF Exported
+            </div>
+            <button class="btn icon-btn" v-tooltip="'Close (Esc)'" aria-label="Close" @click="exportResultModal.show = false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </header>
+          <div class="modal-body export-success-body">
+            <p class="export-success-msg">
+              Dokumen berhasil diekspor ke format PDF:
+            </p>
+            <div class="export-filename-box mono">{{ exportResultModal.fileName }}</div>
+          </div>
+          <footer class="modal-foot export-modal-actions">
+            <button class="btn primary export-btn" @click="openExportedPdf(); exportResultModal.show = false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <path d="M15 3h6v6" /><path d="M10 14L21 3" />
+              </svg>
+              <span>Buka File</span>
+            </button>
+            <button class="btn export-btn" @click="showExportedInFolder(); exportResultModal.show = false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              </svg>
+              <span>Buka Folder</span>
+            </button>
+            <button class="btn export-btn" @click="exportResultModal.show = false">
+              Tutup
+            </button>
+          </footer>
+        </div>
+      </div>
+    </transition>
+
     <transition name="toast">
       <div v-if="toast" class="toast">{{ toast }}</div>
     </transition>
@@ -2346,7 +2540,10 @@ body {
   background: var(--accent);
 }
 
-.btn.primary:hover {
+.btn.primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
   filter: brightness(1.08);
 }
 
@@ -2612,7 +2809,7 @@ body {
   background: var(--panel);
   color: var(--fg);
   font-family: "SF Mono", Menlo, Consolas, "JetBrains Mono", ui-monospace, monospace;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.6;
   tab-size: 2;
 }
@@ -2767,7 +2964,7 @@ body {
 
 .md-content .mermaid-block {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   margin: 1.2em 0;
   overflow-x: auto;
 }
@@ -2775,6 +2972,15 @@ body {
 .md-content .mermaid-block svg {
   max-width: 100%;
   height: auto;
+  font-size: 11px;
+}
+
+.md-content .mermaid-block text,
+.md-content .mermaid-block .label text,
+.md-content .mermaid-block .node text,
+.md-content .mermaid-block .commit-label,
+.md-content .mermaid-block .branch-label {
+  font-size: 11px !important;
 }
 
 .md-content .mermaid-hint {
@@ -2889,7 +3095,8 @@ html[data-theme="dark"] .md-content .hljs-property {
 .search-panel {
   position: absolute;
   top: 10px;
-  right: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -3190,6 +3397,111 @@ html[data-theme="dark"] mark.cm-search-match.cm-current {
   padding-top: 16px;
 }
 
+/* ---------- export modal ---------- */
+
+.export-modal {
+  max-width: 380px;
+}
+
+.export-spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.export-spinner {
+  width: 42px;
+  height: 42px;
+  color: var(--accent);
+  animation: cm-spin 1.2s linear infinite;
+  margin-bottom: 16px;
+}
+
+.export-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 6px;
+}
+
+.export-modal-desc {
+  font-size: 13px;
+  color: var(--fg-soft);
+  margin-bottom: 14px;
+}
+
+.export-bar-track {
+  width: 100%;
+  max-width: 280px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.export-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.export-percent-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.export-success-body {
+  padding: 16px 20px 8px;
+}
+
+.export-success-msg {
+  font-size: 13.5px;
+  color: var(--fg);
+  margin: 0 0 10px;
+}
+
+.export-filename-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  word-break: break-all;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.export-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+}
+
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.export-btn svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
 .about-brand {
   display: flex;
   align-items: center;
@@ -3467,6 +3779,10 @@ html[data-theme="dark"] body {
   border: 1px solid #d0d7de !important;
 }
 
+.print-flow .mermaid-block {
+  justify-content: flex-start !important;
+}
+
 .print-flow .mermaid-block,
 .print-flow .katex-display {
   page-break-inside: avoid;
@@ -3476,5 +3792,14 @@ html[data-theme="dark"] body {
 .print-flow .mermaid-block svg {
   max-width: 100% !important;
   height: auto !important;
+  font-size: 11px !important;
+}
+
+.print-flow .mermaid-block text,
+.print-flow .mermaid-block .label text,
+.print-flow .mermaid-block .node text,
+.print-flow .mermaid-block .commit-label,
+.print-flow .mermaid-block .branch-label {
+  font-size: 11px !important;
 }
 </style>
